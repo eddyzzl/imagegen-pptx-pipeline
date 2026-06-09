@@ -99,6 +99,23 @@ python imagegen-pptx-pipeline/scripts/check_pipeline_gates.py \
   --stage slide-intent-lock
 ```
 
+## Sync To Local Codex
+
+Treat this repository as the source of truth. After editing the skill here, sync the installable skill directory to local Codex:
+
+```bash
+tools/sync-to-codex.sh --dry-run
+tools/sync-to-codex.sh
+```
+
+By default this syncs to `$CODEX_HOME/skills/imagegen-pptx-pipeline` or `~/.codex/skills/imagegen-pptx-pipeline`.
+
+To sync to a custom Codex home:
+
+```bash
+tools/sync-to-codex.sh --codex-home /path/to/.codex
+```
+
 ## Design Principles
 
 - Generated images are visual construction drawings, not the source of truth for text or data.
@@ -107,4 +124,3 @@ python imagegen-pptx-pipeline/scripts/check_pipeline_gates.py \
 - Style options must differ by visual system, not just color.
 - PPTX reconstruction must not downgrade rich comps into generic tables or card grids.
 - Every user pause is stateful through `pipeline_state.json`.
-
