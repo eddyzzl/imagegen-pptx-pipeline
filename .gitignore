@@ -1,0 +1,37 @@
+__pycache__/
+*.py[cod]
+.DS_Store
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.venv/
+venv/
+node_modules/
+
+# Generated pipeline workspaces and deck artifacts
+outputs/
+work/
+slides/
+preview/
+styles/
+layout/
+qa/
+output/
+*.pptx
+*.ppt
+*.key
+*.pdf
+*.png
+*.jpg
+*.jpeg
+*.webp
+*.mp4
+*.mov
+
+# Local/private inputs
+input/
+private/
+secrets/
+*.env
+.env*
+

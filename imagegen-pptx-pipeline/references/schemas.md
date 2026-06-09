@@ -1,0 +1,789 @@
+# Schemas
+
+Use these structures as the stable handoff between phases. Keep them compact but complete.
+
+## pipeline_state.json
+
+Write this before every user-facing pause and update it at every stage transition.
+
+```json
+{
+  "skill": "imagegen-pptx-pipeline",
+  "workspace": "/absolute/path/to/workspace",
+  "title": "Deck title",
+  "mode": "create | template-following | targeted-edit",
+  "current_stage": "initialized | input_reading | content_gate | slide_intent_lock | narrative_selection | style_count | style_selection | single_slide_comps | slide_comp_review | visual_contract | pptx_reconstruction | final_review | complete",
+  "awaiting_user": false,
+  "required_user_reply": "",
+  "next_action": "",
+  "resume_instructions": "Read pipeline_state.json, deck_spec.json, user_decisions.md, then continue this stage; do not restart unless the user requests a restart.",
+  "last_completed_artifacts": {
+    "deck_spec": "deck_spec.json",
+    "design_system": "design_system.json",
+    "slide_intent_plan": "slide_intent_plan.json",
+    "narrative_plan": "narrative_plan.json",
+    "style_brief": "style_brief.json",
+    "selected_style": "",
+    "visual_contract": "visual_contract.json",
+    "latest_preview": ""
+  },
+  "stage_history": [
+    {
+      "stage": "content_gate",
+      "status": "waiting_for_user | completed | needs_iteration | blocked",
+      "timestamp": "ISO-8601",
+      "notes": ""
+    }
+  ]
+}
+```
+
+Rules:
+
+- If `awaiting_user` is true, do not continue until the user answers or explicitly asks for full automation.
+- Generic delegation such as "帮我做 PPT" does not count as explicit full automation.
+- On resume, append the answer to `user_decisions.md`, set `awaiting_user=false`, and continue from `next_action`.
+- Do not reinitialize or discard artifacts when this file exists and points to the current task.
+
+## deck_spec.json
+
+```json
+{
+  "deck": {
+    "title": "Deck title",
+    "audience": "board | investor | executive | sales | training | other",
+    "objective": "What the deck must accomplish",
+    "deck_profile": "product-pitch | company-profile | model-technical | sales-gtm | strategy-executive | investor-finance | training-enable | internal-review | other",
+    "content_input_type": "explicit_per_page | brief_outline | template_only | reference_only | mixed",
+    "language": "zh-CN",
+    "aspect_ratio": "16:9",
+    "mode": "create | template-following | targeted-edit",
+    "slide_count": 0,
+    "lock_state": "draft | needs_user_confirmation | locked"
+  },
+  "global_constraints": {
+    "must_include": [],
+    "must_not_include": [],
+    "source_rules": [],
+    "editability": "main text, numbers, footers, page markers editable",
+    "assumptions": [],
+    "user_confirmed_decisions": [],
+    "content_risks": [],
+    "grill_questions": [],
+    "content_confirmation_required": true
+  },
+  "profile_requirements": {
+    "primary_profile": "",
+    "secondary_profiles": [],
+    "required_proof_objects": [],
+    "source_requirements": [],
+    "visual_density": "low | medium | high",
+    "audience_tolerance_for_complexity": "low | medium | high"
+  },
+  "slides": [
+    {
+      "slide_id": "slide-001",
+      "page_number": 1,
+      "section": "Section name",
+      "title": "Exact title",
+      "claim": "One-sentence slide takeaway",
+      "body_text": ["Exact bullet or paragraph text"],
+      "data": [
+        {
+          "label": "Metric name",
+          "value": "Exact value",
+          "unit": "%",
+          "source_id": "source-001"
+        }
+      ],
+      "proof_object": "chart | table | process | timeline | image | diagram | comparison | quote",
+      "proof_object_strength": "weak | adequate | strong",
+      "visual_intent": "What the visual should communicate",
+      "visual_expression_must_preserve": "loop | radial | system map | maturity arc | funnel | dashboard | process chain | table | other",
+      "layout_hint": "Optional composition guidance",
+      "template_source_slide": "source slide id when template-following",
+      "template_required_elements": ["logo", "footer", "page marker", "section label"],
+      "visual_comp_required": true,
+      "comp_path": "slides/slide-001-comp.png",
+      "comp_review_status": "not_started | needs_iteration | approved | user_accepted_risk",
+      "pptx_restoration_status": "not_started | preview_failed | needs_iteration | approved",
+      "editable_text": ["title", "body_text", "data labels", "footer", "page_number"],
+      "image_assets": [
+        {
+          "asset_id": "asset-001",
+          "role": "photo | logo | icon | screenshot | texture | generated",
+          "source": "user-provided | verified-url | generated",
+          "required": false
+        }
+      ],
+      "speaker_notes": "",
+      "open_questions": []
+    }
+  ],
+  "sources": [
+    {
+      "source_id": "source-001",
+      "title": "Source name",
+      "path_or_url": "",
+      "date": "",
+      "notes": ""
+    }
+  ]
+}
+```
+
+Lock rules:
+
+- `draft`: inputs are still being parsed or the story is incomplete.
+- `needs_user_confirmation`: there are blocking questions or assumptions that need user approval before visual generation.
+- `locked`: content is approved for ImageGen. Do not set this if P0/P1 content findings remain unresolved.
+
+## design_system.json
+
+```json
+{
+  "mode": "create | template-following | targeted-edit",
+  "deck_profile": "product-pitch | company-profile | model-technical | sales-gtm | strategy-executive | investor-finance | training-enable | internal-review | other",
+  "template_constraints": {
+    "source_pptx": "",
+    "template_mode": "none | hard",
+    "template_contact_sheet": "",
+    "template_frame_map": "template-frame-map.json",
+    "preserve_master": true,
+    "preserve_footer": true,
+    "preserve_logo": true,
+    "preserve_page_markers": true,
+    "preserve_title_furniture": true,
+    "protected_elements": [],
+    "allowed_deviations": []
+  },
+  "palette": {
+    "primary": [],
+    "secondary": [],
+    "neutral": [],
+    "semantic": {}
+  },
+  "typography": {
+    "title": {"font": "", "weight": "", "size_range": ""},
+    "body": {"font": "", "weight": "", "size_range": ""},
+    "numbers": {"font": "", "weight": "", "size_range": ""}
+  },
+  "layout": {
+    "aspect_ratio": "16:9",
+    "grid": "",
+    "safe_margins": "",
+    "footer_rule": "",
+    "page_number_rule": ""
+  },
+  "visual_language": {
+    "backgrounds": "",
+    "cards": "",
+    "charts": "",
+    "icons": "",
+    "photography": "",
+    "texture_depth": "",
+    "visual_ambition": "restrained | polished | premium | cinematic-business",
+    "avoid_visual_regressions": [
+      "flat table-only deck",
+      "generic equal-card grid",
+      "default PPT template feel",
+      "near-identical style options"
+    ]
+  },
+  "taste_guidance": {
+    "enabled": true,
+    "sources": [
+      {
+        "name": "built-in-ppt-taste-system",
+        "path": "references/taste-system.md",
+        "used_for": "style exploration | comp review | PPTX reconstruction QA | anti-default QA",
+        "constraints_used": [
+          "avoid flat table-only decks when richer proof objects fit",
+          "require profile-appropriate visual archetypes",
+          "preserve ImageGen comp visual grammar during PPTX reconstruction"
+        ],
+        "constraints_ignored": []
+      }
+    ],
+    "portable_rules": [
+      "Avoid generic equal-card grids unless the content requires a matrix",
+      "Use intentional whitespace and hierarchy, not decoration",
+      "Prefer crafted diagrams and focal objects over default boxes",
+      "Use one dominant proof object per slide",
+      "Keep template-following designs inside protected template frames"
+    ],
+    "ppt_translation_notes": [
+      "The built-in taste system is static PPT guidance, not a web interaction system",
+      "Frontend-only hover/GSAP/responsive rules from optional external sources are not PPT constraints"
+    ]
+  },
+  "reference_patterns": [
+    {
+      "source": "reference deck or slide id",
+      "pattern": "What to borrow",
+      "avoid": "What not to copy"
+    }
+  ],
+  "asset_rules": {
+    "identity_assets": "Use verified or user-provided only",
+    "generated_assets": "Allowed for non-identity illustrative material",
+    "image_retention": "Preserve complex visuals as images when native rebuild would reduce quality"
+  }
+}
+```
+
+## slide_intent_plan.json
+
+Use after content/source review and before narrative treatment. This file owns the user-confirmed page intent: what each slide is trying to say and how it can be proven. It does not need final polished copy.
+
+```json
+{
+  "lock_state": "draft | needs_user_confirmation | locked",
+  "source_deck_spec_fingerprint": "sha256:<hash of invariant deck fields>",
+  "matrix_path": "slide_intent_matrix.md",
+  "selection_mode": "ask_user | full_automation",
+  "review_status": "not_started | needs_iteration | approved | user_accepted_risk",
+  "slides": [
+    {
+      "slide_id": "slide-001",
+      "page_number": 1,
+      "proposed_title": "Exact or proposed title",
+      "confirmed_title": "User-confirmed title",
+      "core_idea": "The one thing this page must make the audience believe",
+      "proof_goal": "What must be proven for the core idea to hold",
+      "content_scope": ["what this slide should include", "what it should not include"],
+      "evidence_candidates": [
+        {
+          "source_id": "source-001",
+          "source_path": "input/source.pdf",
+          "evidence": "Metric, fact, quote, case, chart input, or artifact available in supplied materials",
+          "confidence": "low | medium | high",
+          "usage": "primary proof | supporting detail | optional"
+        }
+      ],
+      "data_to_extract": ["metric or table still to extract from supplied materials"],
+      "content_gaps": ["missing user confirmation or source gap"],
+      "accepted_assumptions": [],
+      "status": "draft | needs_user | confirmed | accepted_assumption"
+    }
+  ],
+  "open_questions": []
+}
+```
+
+Rules:
+
+- `slide_intent_matrix.md` must have one row per slide and columns: page, proposed title, core idea, proof goal, evidence/data candidates, gaps/questions, confidence.
+- Every slide must have `confirmed_title`, `core_idea`, `proof_goal`, and either evidence candidates or accepted assumptions before narrative treatment.
+- If the user only supplied a brief outline, the agent should infer proposed slide intent from all supplied materials and ask for confirmation.
+- If the user supplied exact per-page content, do not rewrite broadly; confirm intent and source coverage.
+- This stage may leave final wording incomplete, but not the slide's purpose.
+
+## narrative_plan.json
+
+Use after content lock and before any ImageGen style generation. This file owns the selected presentation narrative, while `deck_spec.json` still owns source truth.
+
+```json
+{
+  "lock_state": "draft | needs_user_confirmation | locked",
+  "source_deck_spec_fingerprint": "sha256:<hash of invariant deck fields>",
+  "slide_intent_plan": "slide_intent_plan.json",
+  "slide_intent_lock_state": "locked",
+  "matrix_path": "narrative_matrix.md",
+  "selection_mode": "ask_user | full_automation",
+  "selected_narrative_id": "",
+  "user_selection_note": "",
+  "narrative_options": [
+    {
+      "narrative_id": "evidence-first",
+      "name": "Evidence-first",
+      "premise": "Lead with claim and proof on each slide for fast executive review",
+      "best_for": "executive decision, internal review, board update",
+      "tradeoffs": "Less emotional build-up; strongest for source-backed decisions"
+    },
+    {
+      "narrative_id": "technical-system",
+      "name": "Technical system",
+      "premise": "Show mechanism, architecture, process, validation, and operational control",
+      "best_for": "model, AI, engineering, risk, platform, technical product",
+      "tradeoffs": "More diagram density; requires audience tolerance for complexity"
+    }
+  ],
+  "slides": [
+    {
+      "slide_id": "slide-001",
+      "page_number": 1,
+      "title": "Exact title from deck_spec",
+      "confirmed_core_idea": "Copied from slide_intent_plan",
+      "selected_treatment": {
+        "narrative_id": "evidence-first",
+        "presentation_strategy": "Lead with the strongest result, then show source-backed proof",
+        "content_to_show": ["claim", "2-3 evidence bullets", "key metric"],
+        "proof_object_expression": "scorecard plus short evidence strip",
+        "emphasis": "decision-ready impact",
+        "must_preserve": ["title meaning", "claim", "metric values", "source IDs"],
+        "visual_notes_for_style_lanes": "Any aesthetic family should keep the scorecard/evidence relationship"
+      },
+      "option_cells": [
+        {
+          "narrative_id": "evidence-first",
+          "cell_markdown": "Lead with result; show key metric as scorecard; keep evidence strip below."
+        },
+        {
+          "narrative_id": "technical-system",
+          "cell_markdown": "Frame as mechanism; show process/control map; keep same claim and metrics."
+        }
+      ]
+    }
+  ],
+  "review_status": "not_started | needs_iteration | approved",
+  "open_questions": []
+}
+```
+
+Rules:
+
+- `narrative_matrix.md` must have one row per slide and one column per narrative option.
+- Every cell must explain how the slide is presented and which content/proof is shown.
+- `slide_intent_plan.json.lock_state` must be `locked` before this file can be locked.
+- `selected_treatment` must be populated for every slide before visual style generation.
+- The selected narrative may change presentation strategy, emphasis, and proof-object expression, but not source truth, claims, metrics, sources, or slide order.
+- If the user edits individual cells, update `selected_treatment` and record the decision in `user_decisions.md`.
+
+## style_brief.json
+
+Use after narrative lock and before style contact-sheet ImageGen calls.
+
+```json
+{
+  "direction_count": 4,
+  "user_requested_count": null,
+  "selection_mode": "ask_user | full_automation",
+  "full_automation_trigger": "exact user wording or empty",
+  "generation_mode": "parallel_style_lanes | sequential_style_lanes | single_prompt_fallback",
+  "visual_ambition": "premium executive business deck with template fidelity",
+  "deck_profile": "product-pitch | company-profile | model-technical | sales-gtm | strategy-executive | investor-finance | training-enable | internal-review | other",
+  "template_is_hard_constraint": true,
+  "selected_narrative_id": "evidence-first",
+  "narrative_lock": {
+    "source": "deck_spec.json",
+    "slide_intent_plan": "slide_intent_plan.json",
+    "slide_intent_lock_state": "locked",
+    "narrative_plan": "narrative_plan.json",
+    "deck_spec_fingerprint": "sha256:<hash of invariant deck fields>",
+    "narrative_plan_lock_state": "locked",
+    "locked_slide_count": 12,
+    "locked_slide_order": ["slide-001", "slide-002"],
+    "invariant_fields": [
+      "slide_id",
+      "page_number",
+      "section",
+      "title",
+      "claim",
+      "body_text",
+      "data",
+      "source_id",
+      "proof_object",
+      "visual_intent",
+      "template_source_slide"
+    ],
+    "slide_order_locked": true,
+    "section_flow_locked": true,
+    "titles_locked": true,
+    "claims_locked": true,
+    "required_data_locked": true,
+    "core_proof_objects_locked": true,
+    "allowed_style_adaptations": [
+      "change visual archetype expression while preserving proof-object intent",
+      "adjust density, depth, material, diagram grammar, and pacing",
+      "change chart/diagram styling without changing data or source meaning"
+    ],
+    "forbidden_story_changes": [
+      "add/delete/reorder slides",
+      "replace claims",
+      "invent metrics or sources",
+      "change deck objective",
+      "turn a content proof object into a different narrative point",
+      "ignore the selected narrative treatment"
+    ]
+  },
+  "user_style_preferences": {
+    "requested_aesthetic_families": [],
+    "forbidden_aesthetic_families": [],
+    "notes": ""
+  },
+  "taste_guidance": {
+    "enabled": true,
+    "sources": [
+      {
+        "name": "built-in-ppt-taste-system",
+        "path": "references/taste-system.md",
+        "used_for": "direction diversity, ImageGen art direction, anti-generic review, reconstruction fidelity"
+      }
+    ],
+    "style_principles": [
+      "each direction differs by aesthetic family, composition grammar, proof-object expression, density, depth, and visual rhythm",
+      "single-slide comps must preserve a clear visual archetype",
+      "PPTX reconstruction must retain the approved comp's reader-facing visual grammar"
+    ],
+    "anti_patterns": [
+      "near-identical style options",
+      "flat table-only deck",
+      "generic equal-card grid",
+      "default PPT template feel",
+      "whole-slide flattening without user approval"
+    ],
+    "profile_specific_direction_notes": []
+  },
+  "diversity_axes": [
+    "aesthetic family",
+    "composition grammar",
+    "diagram/chart language",
+    "density and pacing",
+    "background/depth treatment",
+    "material and texture treatment",
+    "title and section treatment"
+  ],
+  "candidate_directions": [
+    {
+      "option_id": "A",
+      "style_lane_id": "style-lane-A",
+      "aesthetic_family": "premium-flat",
+      "name": "Premium-flat executive evidence",
+      "premise": "Formal report structure with refined flat hierarchy and clean evidence modules",
+      "profile_fit": "internal-review",
+      "must_differ_by": ["flat editorial hierarchy", "minimal depth", "compliance-ready evidence"],
+      "narrative_behavior": "same_story_reexpressed"
+    },
+    {
+      "option_id": "B",
+      "style_lane_id": "style-lane-B",
+      "aesthetic_family": "tech-systems",
+      "name": "Technical platform architecture",
+      "premise": "System maps, pipelines, layered diagrams, and engineering evidence",
+      "must_differ_by": ["architecture maps", "process chains", "higher diagram density"],
+      "narrative_behavior": "same_story_reexpressed"
+    },
+    {
+      "option_id": "C",
+      "style_lane_id": "style-lane-C",
+      "aesthetic_family": "motion-inspired",
+      "name": "Motion-inspired growth arc",
+      "premise": "Maturity arcs, staged flow, progress curves, and motion-like narrative rhythm",
+      "must_differ_by": ["kinetic composition", "large focal graphics", "staged reveal rhythm"],
+      "narrative_behavior": "same_story_reexpressed"
+    }
+  ],
+  "style_lanes": [
+    {
+      "style_lane_id": "style-lane-A",
+      "option_id": "A",
+      "aesthetic_family": "premium-flat",
+      "subagent_role": "style-lane-art-director",
+      "generator": "imagegen",
+      "status": "planned | prompt_ready | generating | generated | needs_regeneration | rejected | selected",
+      "prompt_path": "prompts/style-lane-A.txt",
+      "output_path": "styles/option-A-contact-sheet.png",
+      "narrative_lock_ref": "sha256:<hash of invariant deck fields>",
+      "invariance_check": {
+        "slide_count_ok": true,
+        "order_ok": true,
+        "claims_preserved": true,
+        "data_sources_preserved": true,
+        "proof_object_intent_preserved": true,
+        "selected_narrative_preserved": true,
+        "violations": []
+      },
+      "must_preserve_from_deck_spec": ["slide order", "titles", "claims", "required data", "core proof objects"],
+      "style_may_change": ["composition", "material/depth", "chart styling", "diagram grammar", "density"],
+      "notes": ""
+    }
+  ],
+  "selected_option": "",
+  "style_contact_sheets": [
+    {
+      "option_id": "A",
+      "style_lane_id": "style-lane-A",
+      "aesthetic_family": "premium-flat",
+      "generator": "imagegen",
+      "path": "styles/option-A-contact-sheet.png",
+      "prompt_path": "prompts/style-lane-A.txt",
+      "narrative_lock_ref": "sha256:<hash of invariant deck fields>",
+      "invariance_check": {
+        "slide_count_ok": true,
+        "order_ok": true,
+        "claims_preserved": true,
+        "data_sources_preserved": true,
+        "proof_object_intent_preserved": true,
+        "selected_narrative_preserved": true,
+        "violations": []
+      }
+    }
+  ],
+  "option_safety_status": "not_started | needs_regeneration | ready_for_user | selected"
+}
+```
+
+Rules:
+
+- If the user did not choose a count, ask unless full automation is explicitly requested.
+- Full automation must be triggered by explicit wording such as "全自动", "不用问我", "你自己决定", or a recorded answer. Do not infer it from "帮我做 PPT".
+- `selection_mode` may only be `ask_user` or `full_automation`; ad hoc values such as `auto` are invalid.
+- `direction_count: 1` is valid only when the user explicitly requested one direction and `user_requested_count` records it.
+- `style_contact_sheets` must point to style-option images, not final output previews.
+- `style_contact_sheets[].generator` must be `imagegen`; rendered PPTX previews, template screenshots, or hand-made placeholders are invalid style previews.
+- Each candidate direction must have a distinct `aesthetic_family`, premise, and visual grammar. Recolored variants fail the style gate.
+- Candidate directions must fit the selected `deck_profile`; do not reuse defense-deck direction names for product, company, model, or sales decks unless they genuinely fit.
+- Candidate directions must preserve `narrative_lock`; style differences may change visual expression but not slide order, title meaning, claims, required data, sources, or proof-object intent.
+- `narrative_lock.deck_spec_fingerprint` must match the current locked deck spec. If content changes, regenerate style lanes.
+- `slide_intent_lock_state` must be `locked`; visual style generation cannot bypass user-confirmed slide intent.
+- `selected_narrative_id` must match `narrative_plan.json.selected_narrative_id`, and `narrative_plan_lock_state` must be `locked`.
+- Each lane/contact sheet must record an `invariance_check`. Any violation blocks style selection.
+- Built-in taste guidance should be reflected as portable PPT rules and anti-patterns. External taste sources are optional supplements only and must not be copied wholesale from frontend skills.
+- Template-following directions may not change protected template elements; they must differentiate inside allowed content zones.
+
+## template-frame-map.json
+
+Use when a template/source PPTX exists. This file is mandatory in `template-following` mode.
+
+```json
+{
+  "source_pptx": "input/template.pptx",
+  "template_contact_sheet": "previews/template-contact-sheet.png",
+  "rules": {
+    "inherit_source_slides": true,
+    "never_start_from_blank": true,
+    "preserve_master": true,
+    "preserve_brand_chrome": true,
+    "deviation_log": "deviation-log.md"
+  },
+  "slide_map": [
+    {
+      "target_slide_id": "slide-001",
+      "source_slide_id": "template-slide-001",
+      "source_preview": "previews/template-slide-001.png",
+      "layout_archetype": "cover | section | content | chart | dashboard | closing | other",
+      "protected_elements": [
+        "logo",
+        "footer",
+        "page number",
+        "title block",
+        "section label",
+        "background frame"
+      ],
+      "editable_zones": [
+        {
+          "zone_id": "main-content",
+          "bounds": "approximate x,y,w,h or verbal description",
+          "allowed_content": "diagram | chart | text | image | table"
+        }
+      ],
+      "allowed_deviations": []
+    }
+  ]
+}
+```
+
+Rules:
+
+- Every final slide in `template-following` mode must map to a source slide or document a user-approved exception in `deviation-log.md`.
+- Protected elements must appear in the ImageGen comp and final PPTX preview unless the user explicitly accepts the deviation.
+- If no source slide can support a target slide, ask the user, split the slide, or regenerate the comp within a compatible template frame; do not silently rebuild from blank.
+
+## qa_report.md
+
+Use short sections:
+
+```markdown
+# QA Report
+
+## Status
+PASS | NEEDS_ITERATION | BLOCKED
+
+## Source Truth
+- Deck spec:
+- Slide intent plan:
+- Narrative plan:
+- Design system:
+- Style brief:
+- Template:
+- Reference decks:
+
+## Slide Intent Gate
+| slide | confirmed_title | core_idea | proof_goal | evidence_status | gaps |
+
+## Narrative Treatment Gate
+| narrative_id | selected | matrix_complete | review_status | action |
+
+## Reviewer Findings
+| role | severity | slide | finding | action |
+
+## Visual Comp Gate
+| slide | comp_path | comp_review_status | iteration_count | approved_by |
+
+## Style Direction Gate
+| option | premise | diversity_check | template_check | decision |
+
+## Template Fidelity Gate
+| slide | template_source_slide | protected_elements_preserved | deviations |
+
+## PPTX Reconstruction Gate
+| slide | preview_path | comp_match_status | reconstruction_fidelity | editability_status | action |
+
+## Final Council
+| role | status | approval_to_advance | remaining_p0_p1 |
+
+## Editability
+- Native editable text:
+- Native editable shapes/charts:
+- Retained image areas:
+
+## Known Limitations
+- Data approximations:
+- Missing inputs:
+```
+
+## visual_contract.json
+
+Use after ImageGen style selection and single-slide comps, before PPTX authoring:
+
+```json
+{
+  "selected_style": "Option B + template fidelity",
+  "contact_sheet": "preview/imagegen-style-contact-sheet.png",
+  "template_mode": "none | hard",
+  "template_contact_sheet": "previews/template-contact-sheet.png",
+  "template_frame_map": "template-frame-map.json",
+  "per_slide_comps_complete": true,
+  "downgrade_mode": false,
+  "explicit_downgrade_accepted": false,
+  "comp_is_construction_drawing": true,
+  "minimum_non_title_rich_visual_ratio": 0.6,
+  "slides": [
+    {
+      "slide_id": "slide-001",
+      "template_source_slide": "template-slide-001",
+      "template_elements_to_preserve": [
+        "logo",
+        "footer",
+        "page marker",
+        "title furniture"
+      ],
+      "comp_path": "slides/slide-001-comp.png",
+      "comp_prompt_path": "prompts/slide-001-comp.txt",
+      "comp_review_status": "approved",
+      "iteration_count": 1,
+      "visual_archetype": "maturity arc | system map | loop | funnel | radial | timeline | swimlane | matrix | scorecard | dashboard | process chain | comparison | title",
+      "must_preserve": [
+        "large maturity arc from lower left to upper right",
+        "three phase nodes connected by red line",
+        "single focal metric ring on right"
+      ],
+      "reader_facing_fidelity_targets": [
+        "same visual archetype",
+        "same focal object",
+        "same flow direction",
+        "similar density and hierarchy",
+        "same relative region layout"
+      ],
+      "native_reconstruction": [
+        "editable title/subtitle/footer",
+        "editable arc approximated with lines and nodes",
+        "editable metric labels and callouts"
+      ],
+      "retained_images": [],
+      "allowed_simplifications": [
+        "replace textured background with template white background",
+        "simplify icon detail while keeping icon placement"
+      ],
+      "prohibited_regressions": [
+        "table-only",
+        "square-card-only",
+        "generic three-column card grid",
+        "rebuild-from-blank when template exists",
+        "missing template logo/footer/page marker",
+        "proof object changed from system map to text table"
+      ],
+      "comparison_gate": {
+        "pptx_preview_path": "previews/slide-001-pptx.png",
+        "comp_match_status": "not_started | needs_iteration | approved",
+        "reconstruction_fidelity": "not_started | failed | partial | approved",
+        "template_match_status": "not_started | needs_iteration | approved",
+        "editability_status": "not_started | needs_iteration | approved"
+      },
+      "deviation_notes": ""
+    }
+  ]
+}
+```
+
+Rules:
+
+- A final PPTX slide must keep the slide's `visual_archetype` unless `deviation_notes` explains a source/template/editability blocker.
+- If `template_mode` is `hard`, every slide must preserve its mapped source slide's protected elements unless `deviation_notes` and `deviation-log.md` document explicit user acceptance.
+- If `per_slide_comps_complete` is false, PPTX authoring is blocked.
+- Approved comp paths must point to independently generated slide comp images, normally under `slides/slide-XXX-comp.png`. Paths under `preview/`, `output/`, `template-starter-preview/`, or any rendered PPTX preview are invalid.
+- If `downgrade_mode` is true, `user_decisions.md` must explain that the user accepted a style-inspired rebuild rather than comp-faithful reconstruction. Do not infer this from automation mode.
+- The final council must compare PPTX previews against this file.
+
+## content_review.md
+
+Use before ImageGen:
+
+```markdown
+# Content Review
+
+## Status
+PASS | NEEDS_USER | BLOCKED
+
+## Story Spine
+- Thesis:
+- Chapters:
+- Decision required:
+
+## Grill Questions
+| priority | question | why it matters | default assumption |
+
+## Content Findings
+| role | severity | slide | finding | recommended action |
+
+## Lock Recommendation
+LOCK | ASK_USER | REVISE_SPEC | BLOCK
+```
+
+## user_decisions.md
+
+Record user decisions and automation assumptions:
+
+```markdown
+# User Decisions
+
+## Confirmed By User
+- 
+
+## Accepted Automation Assumptions
+- 
+
+## Explicitly Accepted Risks
+- 
+```
+
+## qa/final-council.md
+
+Use after rendering PPTX previews:
+
+```markdown
+# Final Deck Council
+
+## Status
+PASS | NEEDS_ITERATION | BLOCKED
+
+## Role Results
+| role | status | score | approval_to_advance |
+
+## Blocking Findings
+| severity | role | slide | finding | fix |
+
+## Export Decision
+EXPORT | ITERATE | ASK_USER | BLOCK
+```
