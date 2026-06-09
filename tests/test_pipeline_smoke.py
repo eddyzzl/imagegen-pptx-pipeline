@@ -188,6 +188,59 @@ class PipelineSmokeTests(unittest.TestCase):
             payload = json.loads(completed.stdout)
             self.assertEqual(payload["status"], "PASS")
 
+    def test_visual_contract_requires_pixel_locked_hybrid_plan(self) -> None:
+        gate_module = load_gate_module()
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp)
+            (workspace / "slides").mkdir()
+            (workspace / "styles").mkdir()
+            comp = workspace / "slides" / "slide-001-comp.png"
+            comp.write_bytes(b"fake image bytes")
+            contact = workspace / "styles" / "option-a-contact-sheet.png"
+            contact.write_bytes(b"fake image bytes")
+            deck_spec = {
+                "deck": {"slide_count": 1},
+                "slides": [{"slide_id": "slide-001"}],
+            }
+            visual_contract = {
+                "selected_style": "Option A",
+                "contact_sheet": "styles/option-a-contact-sheet.png",
+                "per_slide_comps_complete": True,
+                "default_reconstruction_mode": "pixel_locked_hybrid",
+                "pixel_locked_hybrid_required": True,
+                "slides": [
+                    {
+                        "slide_id": "slide-001",
+                        "comp_path": "slides/slide-001-comp.png",
+                        "visual_archetype": "system map",
+                        "reconstruction_mode": "pixel_locked_hybrid",
+                    }
+                ],
+            }
+            failures: list[str] = []
+            gate_module.check_visual_contract(workspace, deck_spec, visual_contract, failures)
+            self.assertTrue(any("comp_backplate.strategy" in item for item in failures))
+            self.assertTrue(any("text_mask_plan" in item for item in failures))
+            self.assertTrue(any("editable_overlay_plan" in item for item in failures))
+
+            visual_contract["slides"][0].update(
+                {
+                    "comp_backplate": {
+                        "strategy": "full_slide",
+                        "path": "slides/slide-001-comp.png",
+                        "insert_first": True,
+                        "covers_full_slide": True,
+                    },
+                    "text_mask_plan": [
+                        {"region": "title", "method": "shape mask", "reason": "editable title overlay"}
+                    ],
+                    "editable_overlay_plan": ["editable title", "editable key number"],
+                }
+            )
+            failures = []
+            gate_module.check_visual_contract(workspace, deck_spec, visual_contract, failures)
+            self.assertEqual(failures, [])
+
 
 if __name__ == "__main__":
     unittest.main()

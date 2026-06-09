@@ -172,7 +172,7 @@ If a template exists, the prompt must explicitly include the mapped source slide
 
 The comp is a construction drawing. Rebuild main titles, body text, numbers, footers, and page markers as editable PPT text. Rebuild simple geometry natively. Retain cropped image layers when needed for complex backgrounds, texture, depth, illustrations, or diagram backplates.
 
-Do not flatten the whole slide into one background image unless the user explicitly accepts non-editable output.
+Do not deliver a final slide as only one flat image with no editable main information unless the user explicitly accepts non-editable output. A whole-slide comp backplate is acceptable when editable text/numbers/simple shapes are overlaid.
 
 Do not replace a rich ImageGen comp with a generic table, card grid, or default layout because it is easier to author. If native reconstruction would lose the premium feel, retain the complex visual layer from the comp and overlay editable text/shapes.
 

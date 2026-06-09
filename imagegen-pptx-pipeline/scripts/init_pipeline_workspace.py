@@ -38,7 +38,7 @@ BUILT_IN_TASTE_ANTI_PATTERNS = [
     "flat table-only deck",
     "generic equal-card grid",
     "default PPT template feel",
-    "whole-slide flattening without user approval",
+    "flat image-only slide without editable overlays",
 ]
 
 
@@ -351,6 +351,8 @@ def main() -> int:
         "downgrade_mode": False,
         "explicit_downgrade_accepted": False,
         "comp_is_construction_drawing": True,
+        "default_reconstruction_mode": "pixel_locked_hybrid",
+        "pixel_locked_hybrid_required": True,
         "minimum_non_title_rich_visual_ratio": 0.6,
         "slides": [],
     }

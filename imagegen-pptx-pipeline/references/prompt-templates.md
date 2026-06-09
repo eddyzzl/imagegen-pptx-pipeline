@@ -299,14 +299,19 @@ Inputs:
 - Template mode: <create | template-following>
 
 Core strategy:
-Use comp-faithful hybrid reconstruction: preserve the approved visual comp's design quality and composition while rebuilding main information as editable PowerPoint elements. Treat the comp as a construction drawing, not loose inspiration.
+Use pixel-locked hybrid reconstruction by default: preserve the approved visual comp's design quality and composition by inserting it as a full-slide or sliced visual backplate, then rebuild main information as editable PowerPoint elements on top. Treat the comp as a construction drawing and visual source, not loose inspiration.
+
+Reconstruction modes:
+- pixel_locked_hybrid: use the approved comp as a full-slide backplate, mask text areas, then overlay editable native PPT text/numbers/simple shapes. This is the default.
+- sliced_hybrid: crop stable visual regions from the comp, mask or omit text-heavy regions, then rebuild those regions natively.
+- native_rebuild: rebuild everything natively only if preview comparison still matches or the user accepted a fidelity downgrade.
 
 Hard requirements:
 1. Final text content must come from `deck_spec.json`, not OCR from the comp.
 2. Main titles, subtitles, paragraphs, quotes, key numbers, chart labels, annotations, footers, section names, and page numbers must be native editable PPT text unless explicitly impossible.
 3. Simple shapes, dividers, geometric frames, labels, buttons, tables, and simple charts should be rebuilt as editable PPT elements.
 4. Complex images, photos, texture, 3D, glass, metal, dense icons, official logos, product UI, and complicated diagrams may be retained as cropped high-quality images.
-5. Do not flatten the whole slide into one background image.
+5. Do not rebuild from a blank slide when that would lose the approved comp. Insert the approved comp as a visual backplate first unless the visual_contract explicitly selects native_rebuild.
 6. Preserve composition, hierarchy, color, contrast, spacing, rounded corners, shadows, opacity, alignment, and visual rhythm.
 7. If a chart's exact data cannot be inferred from sources, use the data in `deck_spec.json`; if no exact data exists, mark it as visual approximation in QA.
 8. Render a preview and iterate if it visibly diverges from the approved comp.
@@ -317,8 +322,10 @@ Hard requirements:
 13. If the approved comp conflicts with the template frame, stop and request/regenerate a comp inside the template frame. Do not silently discard either the comp or the template.
 14. Use retained image layers when needed to preserve ImageGen quality: complex depth fields, textured backgrounds, diagram backplates, illustrations, and non-editable ornamental layers may remain images while all main text/numbers stay native.
 15. Render a preview beside the source comp. If visual fidelity, template fidelity, reconstruction fidelity, or editability fails, iterate before exporting.
-16. If a manual/native rebuild would lose the approved comp's premium feel, keep a cropped visual layer from the comp and overlay editable text/shapes. Do not flatten the full slide unless explicitly accepted by the user.
-17. Before starting PPTX reconstruction, run `check_pipeline_gates.py --stage before-pptx`. If it fails, fix the missing ImageGen/style/review artifacts instead of building from scratch.
+16. A whole-slide comp backplate is allowed and recommended for fidelity, but the final slide must not be only a flat image: overlay editable main text/numbers/labels and document retained image areas.
+17. If comp text would duplicate the editable overlay, mask/cover the comp text region first with matching background patches, then place native editable text above it. If clean masking is impossible, document the exception and prefer visual fidelity over a native-only redraw.
+18. If a manual/native rebuild would lose the approved comp's premium feel, use pixel_locked_hybrid or sliced_hybrid. Do not switch to native_rebuild unless explicitly approved or visually proven.
+19. Before starting PPTX reconstruction, run `check_pipeline_gates.py --stage before-pptx`. If it fails, fix the missing ImageGen/style/review artifacts instead of building from scratch.
 
 Output:
 - one editable PPTX or slide module as required by the Presentations workflow
@@ -341,13 +348,17 @@ Inputs:
 
 For each slide, identify:
 1. visual archetype: title, system map, maturity arc, loop, funnel, radial, timeline, swimlane, matrix, scorecard, dashboard, process chain, comparison, or other.
-2. must-preserve composition: focal object, diagram geometry, flow direction, regions, callouts, whitespace, and hierarchy.
-3. native reconstruction plan: editable shapes, text, connectors, charts, tables, icons.
-4. retained image plan: only complex textures, photos, official logos, or elements impossible to reconstruct without quality loss.
-5. prohibited regressions: table-only, square-card-only, generic card grid, default template, text-heavy version, proof-object downgrade.
-6. acceptable simplifications for editability/template fidelity.
-7. reader-facing fidelity targets: what must still match even if pixel-level details differ.
-8. retained-image candidates: which visual layers should be cropped from the comp to preserve design quality.
+2. reconstruction_mode: pixel_locked_hybrid, sliced_hybrid, or native_rebuild. Default to pixel_locked_hybrid.
+3. comp backplate plan: full-slide comp or cropped comp layers to insert before editable overlays.
+4. text mask plan: regions where comp-rendered text should be covered before native editable text is placed.
+5. editable overlay plan: titles, body text, key numbers, labels, footers, page markers, and simple callouts that must be native PPT.
+6. must-preserve composition: focal object, diagram geometry, flow direction, regions, callouts, whitespace, and hierarchy.
+7. native reconstruction plan: editable shapes, text, connectors, charts, tables, icons.
+8. retained image plan: complex textures, photos, official logos, generated diagram layers, or elements impossible to reconstruct without quality loss.
+9. prohibited regressions: table-only, square-card-only, generic card grid, default template, text-heavy version, proof-object downgrade, or native-only redraw without proof.
+10. acceptable simplifications for editability/template fidelity.
+11. reader-facing fidelity targets: what must still match even if pixel-level details differ.
+12. preview comparison target: what visual differences are acceptable after rendering the PPTX preview.
 
 Output valid `visual_contract.json`.
 

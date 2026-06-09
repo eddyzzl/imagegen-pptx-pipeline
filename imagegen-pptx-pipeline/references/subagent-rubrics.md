@@ -16,7 +16,7 @@ Use only the roles needed for the current phase.
 | style count/direction planning | `design-diversity`, `taste-direction`, `style-lane-art-director`, `image-art-director`, `template-fidelity` when a template exists | no contact sheet until directions have materially different aesthetic families, profile fit, built-in taste compliance, narrative lock, and template-safe constraints |
 | style contact sheet selection | light P0 safety screen before user choice; after choice use `narrative-invariance`, `style-coherence`, `color-brand`, `executive-polish`, `design-diversity`, `taste-direction`, `image-art-director`, `template-fidelity` when a template exists | no single-slide comps until selected direction has no P0/P1 blockers |
 | single-slide comp review | `narrative-invariance`, `content-integrity`, `text-typography`, `visual-fidelity`, `image-art-director`, `layout-pptx-feasibility`, `chart-logic`, `asset-authenticity`, `template-fidelity` when a template exists, `accessibility-readability` | no visual contract or PPTX build until P0/P1 comp blockers resolved |
-| visual contract lock | `visual-fidelity`, `layout-pptx-feasibility`, `chart-logic`, `template-fidelity` when a template exists | no PPTX build until each slide has an approved comp, comp-faithful visual archetype, template mapping, and native reconstruction plan |
+| visual contract lock | `visual-fidelity`, `layout-pptx-feasibility`, `chart-logic`, `template-fidelity` when a template exists | no PPTX build until each slide has an approved comp, comp-faithful visual archetype, template mapping, reconstruction mode, comp backplate plan, text mask plan, editable overlay plan, and native reconstruction plan |
 | PPTX preview review | all relevant roles below, including `pptx-reconstruction-fidelity` | no export until every required role approves |
 | final synthesis | `deck-council-synthesizer` | write `qa/final-council.md` and final export decision |
 
@@ -49,7 +49,7 @@ Each reviewer should return:
 
 Severity:
 
-- `P0`: factual error, invented data/source/logo, wrong slide order, missing required slide, non-editable main text in final PPTX, missing required per-slide comp, using PPTX preview/output images as approved comps, whole-slide flattening without approval, or template-breaking output.
+- `P0`: factual error, invented data/source/logo, wrong slide order, missing required slide, non-editable main text in final PPTX, missing required per-slide comp, using PPTX preview/output images as approved comps, final slide is only a flat image with no editable main information, or template-breaking output.
 - `P1`: major readability, brand, layout, source, chart, story, design-quality, style-diversity, or comp-reconstruction problem that should block the next phase.
 - `P2`: noticeable quality issue that can be batched.
 - `P3`: minor polish.
@@ -255,7 +255,7 @@ Return Feedback JSON.
 
 ```text
 You are the layout-pptx-feasibility reviewer. Decide whether the artifact can be rebuilt as editable PPTX without quality collapse.
-Identify which parts should be native text/shapes/charts and which should remain cropped images. Flag comps that are too decorative, too dense, or impossible to edit cleanly.
+Identify which parts should be native text/shapes/charts and which should remain full-slide or cropped image backplates. Prefer pixel_locked_hybrid or sliced_hybrid when native rebuild would collapse the design. Flag comps that lack a workable text mask/editable overlay plan.
 Return Feedback JSON.
 ```
 
@@ -274,9 +274,9 @@ Return Feedback JSON.
 ```text
 You are the pptx-reconstruction-fidelity reviewer. Compare approved slide comp images against rendered PPTX previews and visual_contract.json.
 The approved comp is the construction drawing. Check whether the PPTX keeps the same visual archetype, focal object, region layout, relative scale, callout placement, flow direction, color rhythm, depth, and executive polish while keeping main text/numbers editable.
-Flag P0 for whole-slide flattening without user approval, missing editable main text, missing approved comp, approved comp paths that point to PPTX previews/output images, or rebuilding from blank when a template exists.
-Flag P1 when the PPTX is logically correct but visibly downgraded: rich comp becomes ordinary table/card grid, premium depth is removed without retained image layers, diagram geometry changes, or the slide looks materially flatter/simpler than the comp.
-Accept documented hybrid reconstruction where complex visual layers remain images and main text/numbers are editable.
+Flag P0 for final slides that are only one flat image with no editable main information, missing editable main text, missing approved comp, approved comp paths that point to PPTX previews/output images, or rebuilding from blank when a template exists.
+Flag P1 when the PPTX is logically correct but visibly downgraded: rich comp becomes ordinary table/card grid, premium depth is removed without retained image/backplate layers, diagram geometry changes, native rebuild loses the comp's visual system, or the slide looks materially flatter/simpler than the comp.
+Accept and prefer documented pixel_locked_hybrid or sliced_hybrid reconstruction where the approved comp is used as a full-slide/cropped backplate and main text/numbers are editable overlays.
 Return Feedback JSON.
 ```
 

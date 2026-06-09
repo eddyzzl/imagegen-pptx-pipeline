@@ -461,6 +461,14 @@ def check_visual_contract(workspace: Path, deck_spec: dict, visual_contract: dic
         pass
     if visual_contract.get("per_slide_comps_complete") is not True:
         failures.append("visual_contract.json per_slide_comps_complete must be true before PPTX build")
+    default_mode = visual_contract.get("default_reconstruction_mode")
+    if default_mode not in {"pixel_locked_hybrid", "sliced_hybrid", "native_rebuild"}:
+        failures.append("visual_contract.json default_reconstruction_mode must be pixel_locked_hybrid, sliced_hybrid, or native_rebuild")
+    if (
+        visual_contract.get("pixel_locked_hybrid_required") is not True
+        and visual_contract.get("explicit_downgrade_accepted") is not True
+    ):
+        failures.append("visual_contract.json pixel_locked_hybrid_required must be true unless explicit_downgrade_accepted is true")
     if expected_count and len(slides) != expected_count:
         failures.append(
             f"visual_contract.json has {len(slides)} slides but deck_spec expects {expected_count}"
@@ -485,6 +493,32 @@ def check_visual_contract(workspace: Path, deck_spec: dict, visual_contract: dic
             )
         if not slide.get("visual_archetype"):
             failures.append(f"slide {idx:03d} missing visual_archetype in visual_contract.json")
+        reconstruction_mode = slide.get("reconstruction_mode")
+        if reconstruction_mode not in {"pixel_locked_hybrid", "sliced_hybrid", "native_rebuild"}:
+            failures.append(
+                f"slide {idx:03d} reconstruction_mode must be pixel_locked_hybrid, sliced_hybrid, or native_rebuild"
+            )
+        if reconstruction_mode == "native_rebuild" and visual_contract.get("explicit_downgrade_accepted") is not True:
+            comparison = slide.get("comparison_gate", {})
+            if comparison.get("comp_match_status") != "approved":
+                failures.append(
+                    f"slide {idx:03d} native_rebuild requires approved comp_match_status or explicit downgrade acceptance"
+                )
+        backplate = slide.get("comp_backplate", {})
+        if reconstruction_mode in {"pixel_locked_hybrid", "sliced_hybrid"}:
+            if not isinstance(backplate, dict):
+                failures.append(f"slide {idx:03d} comp_backplate must be an object")
+                backplate = {}
+            if backplate.get("strategy") not in {"full_slide", "sliced_layers"}:
+                failures.append(f"slide {idx:03d} comp_backplate.strategy must be full_slide or sliced_layers")
+            backplate_path = backplate.get("path") or comp
+            require_file(workspace, backplate_path, f"slide {idx:03d} comp backplate", failures)
+            if backplate.get("insert_first") is not True:
+                failures.append(f"slide {idx:03d} comp_backplate.insert_first must be true")
+        if not slide.get("text_mask_plan"):
+            failures.append(f"slide {idx:03d} missing text_mask_plan in visual_contract.json")
+        if not slide.get("editable_overlay_plan"):
+            failures.append(f"slide {idx:03d} missing editable_overlay_plan in visual_contract.json")
 
 
 def check_reviews(workspace: Path, deck_spec: dict, failures: list[str]) -> None:

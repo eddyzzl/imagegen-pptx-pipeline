@@ -122,5 +122,7 @@ tools/sync-to-codex.sh --codex-home /path/to/.codex
 - Final text and numbers come from `deck_spec.json`.
 - User-supplied templates are hard constraints.
 - Style options must differ by visual system, not just color.
+- PPTX reconstruction defaults to pixel-locked hybrid fidelity: approved comps may be used as full-slide or sliced visual backplates, with editable text/numbers/simple shapes overlaid.
+- The workflow does not promise that every complex visual becomes native editable PPT geometry; it preserves complex visuals as image layers when that is required for visual fidelity.
 - PPTX reconstruction must not downgrade rich comps into generic tables or card grids.
 - Every user pause is stateful through `pipeline_state.json`.

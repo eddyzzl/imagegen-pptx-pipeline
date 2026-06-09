@@ -431,7 +431,7 @@ Use after narrative lock and before style contact-sheet ImageGen calls.
       "flat table-only deck",
       "generic equal-card grid",
       "default PPT template feel",
-      "whole-slide flattening without user approval"
+      "flat image-only slide without editable overlays"
     ],
     "profile_specific_direction_notes": []
   },
@@ -658,6 +658,8 @@ Use after ImageGen style selection and single-slide comps, before PPTX authoring
   "downgrade_mode": false,
   "explicit_downgrade_accepted": false,
   "comp_is_construction_drawing": true,
+  "default_reconstruction_mode": "pixel_locked_hybrid",
+  "pixel_locked_hybrid_required": true,
   "minimum_non_title_rich_visual_ratio": 0.6,
   "slides": [
     {
@@ -674,6 +676,27 @@ Use after ImageGen style selection and single-slide comps, before PPTX authoring
       "comp_review_status": "approved",
       "iteration_count": 1,
       "visual_archetype": "maturity arc | system map | loop | funnel | radial | timeline | swimlane | matrix | scorecard | dashboard | process chain | comparison | title",
+      "reconstruction_mode": "pixel_locked_hybrid | sliced_hybrid | native_rebuild",
+      "comp_backplate": {
+        "strategy": "full_slide | sliced_layers | none",
+        "path": "slides/slide-001-comp.png",
+        "insert_first": true,
+        "covers_full_slide": true
+      },
+      "text_mask_plan": [
+        {
+          "region": "title area",
+          "method": "matching background patch | shape mask | crop without text | no mask needed",
+          "reason": "avoid duplicate image text behind editable text"
+        }
+      ],
+      "editable_overlay_plan": [
+        "editable title",
+        "editable claim",
+        "editable key numbers",
+        "editable footer/page marker",
+        "editable main labels"
+      ],
       "must_preserve": [
         "large maturity arc from lower left to upper right",
         "three phase nodes connected by red line",
@@ -719,6 +742,10 @@ Use after ImageGen style selection and single-slide comps, before PPTX authoring
 
 Rules:
 
+- `default_reconstruction_mode` should be `pixel_locked_hybrid`; use `native_rebuild` only with preview evidence or explicit user acceptance.
+- Each slide must have `reconstruction_mode`, `comp_backplate`, `text_mask_plan`, and `editable_overlay_plan` before PPTX authoring.
+- `pixel_locked_hybrid` and `sliced_hybrid` slides must insert the approved comp or cropped comp layers before native overlays.
+- A whole-slide comp backplate is allowed. A final slide that is only a flat image with no editable main information is not allowed unless the user explicitly requested non-editable output.
 - A final PPTX slide must keep the slide's `visual_archetype` unless `deviation_notes` explains a source/template/editability blocker.
 - If `template_mode` is `hard`, every slide must preserve its mapped source slide's protected elements unless `deviation_notes` and `deviation-log.md` document explicit user acceptance.
 - If `per_slide_comps_complete` is false, PPTX authoring is blocked.
