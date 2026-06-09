@@ -361,6 +361,8 @@ Use after narrative lock and before style contact-sheet ImageGen calls.
   "selection_mode": "ask_user | full_automation",
   "full_automation_trigger": "exact user wording or empty",
   "generation_mode": "parallel_style_lanes | sequential_style_lanes | single_prompt_fallback",
+  "style_variation_scope": "visual_aesthetic_only",
+  "content_strategy_locked": true,
   "visual_ambition": "premium executive business deck with template fidelity",
   "deck_profile": "product-pitch | company-profile | model-technical | sales-gtm | strategy-executive | investor-finance | training-enable | internal-review | other",
   "template_is_hard_constraint": true,
@@ -422,7 +424,8 @@ Use after narrative lock and before style contact-sheet ImageGen calls.
       }
     ],
     "style_principles": [
-      "each direction differs by aesthetic family, composition grammar, proof-object expression, density, depth, and visual rhythm",
+      "each direction differs by visual aesthetic only: art style, material, depth, typography feel, icon/illustration style, chart rendering, composition rhythm, and density",
+      "style lanes must not rename or replace the selected narrative treatment, slide content, claim, data, or proof object",
       "single-slide comps must preserve a clear visual archetype",
       "PPTX reconstruction must retain the approved comp's reader-facing visual grammar"
     ],
@@ -434,6 +437,24 @@ Use after narrative lock and before style contact-sheet ImageGen calls.
       "flat image-only slide without editable overlays"
     ],
     "profile_specific_direction_notes": []
+  },
+  "image_quality_policy": {
+    "policy_id": "imagegen-max-clarity-v1",
+    "enabled": true,
+    "prompt_detail_level": "highest_available",
+    "requested_single_slide_canvas_px": {"width": 3840, "height": 2160},
+    "minimum_acceptable_comp_px": {"width": 1920, "height": 1080},
+    "minimum_acceptable_contact_sheet_px": {"width": 2400, "height": 1350},
+    "prompt_requires_crisp_text_and_icons": true,
+    "review_required_before_pptx": true,
+    "small_text_policy": "Avoid unreadable microtext in ImageGen comps; exact final small text comes from deck_spec.json during PPTX reconstruction.",
+    "blur_rejection_criteria": [
+      "soft or blurry main title",
+      "blurred key numbers",
+      "muddy icons or line art",
+      "low-contrast small labels",
+      "compression artifacts around text or diagram strokes"
+    ]
   },
   "diversity_axes": [
     "aesthetic family",
@@ -449,28 +470,31 @@ Use after narrative lock and before style contact-sheet ImageGen calls.
       "option_id": "A",
       "style_lane_id": "style-lane-A",
       "aesthetic_family": "premium-flat",
-      "name": "Premium-flat executive evidence",
-      "premise": "Formal report structure with refined flat hierarchy and clean evidence modules",
+      "style_variation_scope": "visual_aesthetic_only",
+      "name": "Premium flat",
+      "premise": "Refined flat editorial/business visual skin with exact hierarchy, crisp rules, and restrained depth",
       "profile_fit": "internal-review",
-      "must_differ_by": ["flat editorial hierarchy", "minimal depth", "compliance-ready evidence"],
+      "must_differ_by": ["flat editorial hierarchy", "minimal depth", "precise spacing", "clean chart styling"],
       "narrative_behavior": "same_story_reexpressed"
     },
     {
       "option_id": "B",
       "style_lane_id": "style-lane-B",
-      "aesthetic_family": "tech-systems",
-      "name": "Technical platform architecture",
-      "premise": "System maps, pipelines, layered diagrams, and engineering evidence",
-      "must_differ_by": ["architecture maps", "process chains", "higher diagram density"],
+      "aesthetic_family": "glassmorphism-blur",
+      "style_variation_scope": "visual_aesthetic_only",
+      "name": "Glassmorphism",
+      "premise": "Layered translucent panels, subtle blur, luminous edges, and high-contrast readable typography",
+      "must_differ_by": ["glass material", "translucent depth", "soft layered backgrounds", "clean icon glow"],
       "narrative_behavior": "same_story_reexpressed"
     },
     {
       "option_id": "C",
       "style_lane_id": "style-lane-C",
-      "aesthetic_family": "motion-inspired",
-      "name": "Motion-inspired growth arc",
-      "premise": "Maturity arcs, staged flow, progress curves, and motion-like narrative rhythm",
-      "must_differ_by": ["kinetic composition", "large focal graphics", "staged reveal rhythm"],
+      "aesthetic_family": "skeuomorphic-material",
+      "style_variation_scope": "visual_aesthetic_only",
+      "name": "Skeuomorphic material",
+      "premise": "Tactile material modules, physical controls, soft shadows, paper/metal depth, and object-like surfaces",
+      "must_differ_by": ["tactile material", "physical controls", "soft shadow depth", "object-like modules"],
       "narrative_behavior": "same_story_reexpressed"
     }
   ],
@@ -479,6 +503,7 @@ Use after narrative lock and before style contact-sheet ImageGen calls.
       "style_lane_id": "style-lane-A",
       "option_id": "A",
       "aesthetic_family": "premium-flat",
+      "style_variation_scope": "visual_aesthetic_only",
       "subagent_role": "style-lane-art-director",
       "generator": "imagegen",
       "status": "planned | prompt_ready | generating | generated | needs_regeneration | rejected | selected",
@@ -495,7 +520,7 @@ Use after narrative lock and before style contact-sheet ImageGen calls.
         "violations": []
       },
       "must_preserve_from_deck_spec": ["slide order", "titles", "claims", "required data", "core proof objects"],
-      "style_may_change": ["composition", "material/depth", "chart styling", "diagram grammar", "density"],
+      "style_may_change": ["composition grammar", "material/depth", "chart styling", "diagram styling", "density", "typography style", "icon style"],
       "notes": ""
     }
   ],
@@ -505,6 +530,7 @@ Use after narrative lock and before style contact-sheet ImageGen calls.
       "option_id": "A",
       "style_lane_id": "style-lane-A",
       "aesthetic_family": "premium-flat",
+      "style_variation_scope": "visual_aesthetic_only",
       "generator": "imagegen",
       "path": "styles/option-A-contact-sheet.png",
       "prompt_path": "prompts/style-lane-A.txt",
@@ -532,7 +558,9 @@ Rules:
 - `direction_count: 1` is valid only when the user explicitly requested one direction and `user_requested_count` records it.
 - `style_contact_sheets` must point to style-option images, not final output previews.
 - `style_contact_sheets[].generator` must be `imagegen`; rendered PPTX previews, template screenshots, or hand-made placeholders are invalid style previews.
-- Each candidate direction must have a distinct `aesthetic_family`, premise, and visual grammar. Recolored variants fail the style gate.
+- `style_variation_scope` must be `visual_aesthetic_only`, and `content_strategy_locked` must be true before ImageGen style exploration.
+- Each candidate direction must have a distinct visual `aesthetic_family`, material/depth treatment, typography/icon/chart language, density, and visual rhythm. Recolored variants fail the style gate.
+- Candidate direction names, lane IDs, aesthetic families, and premises must not use content/narrative/proof-object terms such as evidence chain, risk system map, growth maturity, roadmap, achievement, command center, or their Chinese equivalents.
 - Candidate directions must fit the selected `deck_profile`; do not reuse defense-deck direction names for product, company, model, or sales decks unless they genuinely fit.
 - Candidate directions must preserve `narrative_lock`; style differences may change visual expression but not slide order, title meaning, claims, required data, sources, or proof-object intent.
 - `narrative_lock.deck_spec_fingerprint` must match the current locked deck spec. If content changes, regenerate style lanes.
@@ -541,6 +569,8 @@ Rules:
 - Each lane/contact sheet must record an `invariance_check`. Any violation blocks style selection.
 - Built-in taste guidance should be reflected as portable PPT rules and anti-patterns. External taste sources are optional supplements only and must not be copied wholesale from frontend skills.
 - Template-following directions may not change protected template elements; they must differentiate inside allowed content zones.
+- `image_quality_policy` must request the highest available ImageGen detail/resolution. The policy is used by ImageGen prompts, visual-clarity review, and the `before-pptx` gate.
+- HTML/CSS/browser blueprints, browser screenshots, React pages, canvas renders, PPTX previews, and hand-made static previews are invalid style/contact-sheet or single-slide comp sources.
 
 ## template-frame-map.json
 
@@ -619,7 +649,7 @@ PASS | NEEDS_ITERATION | BLOCKED
 | role | severity | slide | finding | action |
 
 ## Visual Comp Gate
-| slide | comp_path | comp_review_status | iteration_count | approved_by |
+| slide | comp_path | comp_review_status | clarity_review_status | dimensions | iteration_count | approved_by |
 
 ## Style Direction Gate
 | option | premise | diversity_check | template_check | decision |
@@ -661,6 +691,24 @@ Use after ImageGen style selection and single-slide comps, before PPTX authoring
   "default_reconstruction_mode": "pixel_locked_hybrid",
   "pixel_locked_hybrid_required": true,
   "minimum_non_title_rich_visual_ratio": 0.6,
+  "image_quality_policy": {
+    "policy_id": "imagegen-max-clarity-v1",
+    "enabled": true,
+    "prompt_detail_level": "highest_available",
+    "requested_single_slide_canvas_px": {"width": 3840, "height": 2160},
+    "minimum_acceptable_comp_px": {"width": 1920, "height": 1080},
+    "minimum_acceptable_contact_sheet_px": {"width": 2400, "height": 1350},
+    "prompt_requires_crisp_text_and_icons": true,
+    "review_required_before_pptx": true,
+    "small_text_policy": "Avoid unreadable microtext in ImageGen comps; exact final small text comes from deck_spec.json during PPTX reconstruction.",
+    "blur_rejection_criteria": [
+      "soft or blurry main title",
+      "blurred key numbers",
+      "muddy icons or line art",
+      "low-contrast small labels",
+      "compression artifacts around text or diagram strokes"
+    ]
+  },
   "slides": [
     {
       "slide_id": "slide-001",
@@ -674,9 +722,20 @@ Use after ImageGen style selection and single-slide comps, before PPTX authoring
       "comp_path": "slides/slide-001-comp.png",
       "comp_prompt_path": "prompts/slide-001-comp.txt",
       "comp_review_status": "approved",
+      "clarity_review": {
+        "status": "not_started | needs_iteration | approved | user_accepted_risk",
+        "image_source_type": "imagegen | user_supplied | template_render",
+        "image_dimensions_px": {"width": 3840, "height": 2160},
+        "text_legibility": "not_started | failed | acceptable | approved | user_accepted_risk",
+        "icon_line_clarity": "not_started | failed | acceptable | approved | user_accepted_risk",
+        "edge_sharpness": "not_started | failed | acceptable | approved | user_accepted_risk",
+        "blocking_blur": false,
+        "small_text_strategy": "regenerate | enlarge labels | simplify microtext | defer exact small copy to PPTX native text | user accepted risk",
+        "reviewer": "visual-clarity"
+      },
       "iteration_count": 1,
       "visual_archetype": "maturity arc | system map | loop | funnel | radial | timeline | swimlane | matrix | scorecard | dashboard | process chain | comparison | title",
-      "reconstruction_mode": "pixel_locked_hybrid | sliced_hybrid | native_rebuild",
+      "reconstruction_mode": "pixel_locked_hybrid | sliced_hybrid | native_trace_hybrid | native_rebuild",
       "comp_backplate": {
         "strategy": "full_slide | sliced_layers | none",
         "path": "slides/slide-001-comp.png",
@@ -744,6 +803,7 @@ Rules:
 
 - `default_reconstruction_mode` should be `pixel_locked_hybrid`; use `native_rebuild` only with preview evidence or explicit user acceptance.
 - Each slide must have `reconstruction_mode`, `comp_backplate`, `text_mask_plan`, and `editable_overlay_plan` before PPTX authoring.
+- Each slide must have `clarity_review.status=approved` or `user_accepted_risk` before PPTX authoring. Blurry titles, key numbers, icons, fine lines, or low-resolution comps block `before-pptx`.
 - `pixel_locked_hybrid` and `sliced_hybrid` slides must insert the approved comp or cropped comp layers before native overlays.
 - A whole-slide comp backplate is allowed. A final slide that is only a flat image with no editable main information is not allowed unless the user explicitly requested non-editable output.
 - In `reconstruction-only` and `repair-existing-pptx` modes, `contact_sheet` is optional and `selected_style` should be `user-supplied-final-images` or `repaired-from-source-images`.

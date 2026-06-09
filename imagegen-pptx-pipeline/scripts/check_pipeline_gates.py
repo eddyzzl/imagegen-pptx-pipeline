@@ -8,11 +8,36 @@ import hashlib
 import json
 import os
 import re
+import struct
 import sys
 from pathlib import Path
 
 
 COMP_RE = re.compile(r"slide[-_]\d{1,3}.*comp\.(png|jpg|jpeg)$", re.IGNORECASE)
+CONTENT_STYLE_TERMS = (
+    "evidence",
+    "proof",
+    "risk-system",
+    "system-map",
+    "command-center",
+    "growth",
+    "maturity",
+    "roadmap",
+    "achievement",
+    "operating",
+    "dossier",
+    "证据",
+    "证明",
+    "风控",
+    "风险",
+    "系统图",
+    "经营",
+    "驾驶舱",
+    "成长",
+    "成熟",
+    "路线",
+    "成果",
+)
 
 
 def load_json(path: Path, failures: list[str]) -> dict:
@@ -61,6 +86,81 @@ def require_file(workspace: Path, value: str | None, label: str, failures: list[
     if not path.exists():
         failures.append(f"Missing file for {label}: {path}")
     return path
+
+
+def image_size(path: Path) -> tuple[int, int]:
+    """Read PNG/JPEG dimensions without external dependencies."""
+    try:
+        with path.open("rb") as handle:
+            header = handle.read(32)
+            if header.startswith(b"\x89PNG\r\n\x1a\n"):
+                width, height = struct.unpack(">II", header[16:24])
+                return int(width), int(height)
+            if header[:2] == b"\xff\xd8":
+                handle.seek(2)
+                while True:
+                    marker_start = handle.read(1)
+                    if not marker_start:
+                        return 0, 0
+                    if marker_start != b"\xff":
+                        continue
+                    marker = handle.read(1)
+                    while marker == b"\xff":
+                        marker = handle.read(1)
+                    if marker in {b"\xc0", b"\xc1", b"\xc2", b"\xc3", b"\xc5", b"\xc6", b"\xc7", b"\xc9", b"\xca", b"\xcb", b"\xcd", b"\xce", b"\xcf"}:
+                        segment = handle.read(7)
+                        height, width = struct.unpack(">HH", segment[3:7])
+                        return int(width), int(height)
+                    length_bytes = handle.read(2)
+                    if len(length_bytes) != 2:
+                        return 0, 0
+                    length = struct.unpack(">H", length_bytes)[0]
+                    handle.seek(max(length - 2, 0), os.SEEK_CUR)
+    except OSError:
+        return 0, 0
+    return 0, 0
+
+
+def contains_content_style_term(value) -> str:
+    text = json.dumps(value, ensure_ascii=False).lower() if not isinstance(value, str) else value.lower()
+    for term in CONTENT_STYLE_TERMS:
+        if term.lower() in text:
+            return term
+    return ""
+
+
+def check_no_html_surrogates(workspace: Path, failures: list[str]) -> None:
+    for folder_name in ("slides", "styles"):
+        folder = workspace / folder_name
+        if not folder.exists():
+            continue
+        for html_path in folder.rglob("*"):
+            if html_path.suffix.lower() in {".html", ".htm"}:
+                failures.append(
+                    f"HTML/CSS/browser surrogate artifact is forbidden in ImageGen pipeline: {html_path}"
+                )
+
+
+def check_not_html_backed_image(path: Path, label: str, failures: list[str]) -> None:
+    normalized = str(path)
+    if f"{os.sep}blueprints{os.sep}" in normalized:
+        failures.append(f"{label} cannot come from an HTML blueprint path: {path}")
+    if path.suffix.lower() in {".html", ".htm"}:
+        failures.append(f"{label} cannot be an HTML file: {path}")
+        return
+    stem = path.stem
+    base_stem = re.sub(r"[-_]comp$", "", stem, flags=re.IGNORECASE)
+    html_candidates = {
+        path.with_suffix(".html"),
+        path.parent / f"{base_stem}.html",
+        path.parent / "blueprints" / f"{base_stem}-blueprint.html",
+        path.parent / "blueprints" / f"{stem}-blueprint.html",
+    }
+    for candidate in sorted(html_candidates):
+        if candidate.exists():
+            failures.append(
+                f"{label} appears backed by an HTML/browser blueprint, not a direct ImageGen image: {candidate}"
+            )
 
 
 def stage_names(pipeline_state: dict) -> set[str]:
@@ -248,6 +348,42 @@ def has_built_in_taste_source(taste_guidance: dict) -> bool:
     return False
 
 
+def safe_int(value) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return 0
+
+
+def check_image_quality_policy(policy, failures: list[str], owner: str) -> dict:
+    if not isinstance(policy, dict) or not policy:
+        failures.append(f"{owner} image_quality_policy is missing")
+        return {}
+    if policy.get("enabled") is not True:
+        failures.append(f"{owner} image_quality_policy.enabled must be true")
+    if policy.get("prompt_detail_level") not in {"highest_available", "maximum", "max"}:
+        failures.append(f"{owner} image_quality_policy.prompt_detail_level must request highest_available quality")
+    requested = policy.get("requested_single_slide_canvas_px") or {}
+    if safe_int(requested.get("width")) < 3840 or safe_int(requested.get("height")) < 2160:
+        failures.append(f"{owner} image_quality_policy.requested_single_slide_canvas_px must target at least 3840x2160")
+    minimum = policy.get("minimum_acceptable_comp_px") or {}
+    if safe_int(minimum.get("width")) < 1920 or safe_int(minimum.get("height")) < 1080:
+        failures.append(f"{owner} image_quality_policy.minimum_acceptable_comp_px must be at least 1920x1080")
+    contact_min = policy.get("minimum_acceptable_contact_sheet_px") or {}
+    if safe_int(contact_min.get("width")) < 2400 or safe_int(contact_min.get("height")) < 1350:
+        failures.append(f"{owner} image_quality_policy.minimum_acceptable_contact_sheet_px must be at least 2400x1350")
+    if policy.get("prompt_requires_crisp_text_and_icons") is not True:
+        failures.append(f"{owner} image_quality_policy.prompt_requires_crisp_text_and_icons must be true")
+    if policy.get("review_required_before_pptx") is not True:
+        failures.append(f"{owner} image_quality_policy.review_required_before_pptx must be true")
+    if not policy.get("small_text_policy"):
+        failures.append(f"{owner} image_quality_policy.small_text_policy is missing")
+    criteria = policy.get("blur_rejection_criteria") or []
+    if not isinstance(criteria, list) or len(criteria) < 3:
+        failures.append(f"{owner} image_quality_policy.blur_rejection_criteria must list at least 3 rejection criteria")
+    return policy
+
+
 def check_style_gate(
     workspace: Path,
     deck_spec: dict,
@@ -278,6 +414,15 @@ def check_style_gate(
         failures.append("design_system.json taste_guidance.sources must include built-in-ppt-taste-system")
     if not has_built_in_taste_source(style_taste):
         failures.append("style_brief.json taste_guidance.sources must include built-in-ppt-taste-system")
+    quality_policy = check_image_quality_policy(style_brief.get("image_quality_policy"), failures, "style_brief.json")
+    contact_min = quality_policy.get("minimum_acceptable_contact_sheet_px") or {}
+    min_contact_width = safe_int(contact_min.get("width"))
+    min_contact_height = safe_int(contact_min.get("height"))
+    check_no_html_surrogates(workspace, failures)
+    if style_brief.get("style_variation_scope") != "visual_aesthetic_only":
+        failures.append("style_brief.json style_variation_scope must be visual_aesthetic_only")
+    if style_brief.get("content_strategy_locked") is not True:
+        failures.append("style_brief.json content_strategy_locked must be true before visual style exploration")
     if selection_mode not in {"ask_user", "full_automation"}:
         failures.append(
             "style_brief.json selection_mode must be ask_user or full_automation; "
@@ -364,6 +509,28 @@ def check_style_gate(
             failures.append(
                 f"candidate direction {idx} narrative_behavior must be same_story_reexpressed"
             )
+        if candidate.get("style_variation_scope") not in {None, "visual_aesthetic_only"}:
+            failures.append(f"candidate direction {idx} style_variation_scope must be visual_aesthetic_only")
+        term = contains_content_style_term(
+            {
+                "style_lane_id": candidate.get("style_lane_id"),
+                "name": candidate.get("name"),
+                "aesthetic_family": candidate.get("aesthetic_family"),
+                "premise": candidate.get("premise") or candidate.get("strategic_premise"),
+            }
+        )
+        if term:
+            failures.append(
+                f"candidate direction {idx} uses content/narrative term {term!r} as a style label; "
+                "style options must be pure visual/aesthetic skins"
+            )
+        may_change = candidate.get("style_may_change") or candidate.get("must_differ_by") or []
+        if isinstance(may_change, list):
+            for item in may_change:
+                if contains_content_style_term(item):
+                    failures.append(
+                        f"candidate direction {idx} style_may_change cannot include content/story/proof-object terms: {item!r}"
+                    )
     if count > 1 and len(set(families)) < min(count, len(candidates)):
         failures.append("candidate directions must use distinct aesthetic_family values")
     if selected_option and candidate_options and selected_option not in candidate_options:
@@ -382,6 +549,21 @@ def check_style_gate(
             lane_options.add(str(lane.get("option_id")))
         if not lane.get("aesthetic_family"):
             failures.append(f"style lane {idx} missing aesthetic_family")
+        if lane.get("style_variation_scope") not in {None, "visual_aesthetic_only"}:
+            failures.append(f"style lane {idx} style_variation_scope must be visual_aesthetic_only")
+        term = contains_content_style_term(
+            {
+                "style_lane_id": lane.get("style_lane_id"),
+                "name": lane.get("name"),
+                "aesthetic_family": lane.get("aesthetic_family"),
+                "premise": lane.get("premise") or lane.get("strategic_premise"),
+            }
+        )
+        if term:
+            failures.append(
+                f"style lane {idx} uses content/narrative term {term!r} as a style label; "
+                "use pure visual labels such as flat, glass, skeuomorphic, editorial, technical-schematic, or illustration"
+            )
         if lane.get("generator") != "imagegen":
             failures.append(f"style lane {idx} generator must be imagegen")
         if lane.get("narrative_lock_ref") != recorded_fingerprint:
@@ -393,6 +575,17 @@ def check_style_gate(
         output_path = require_file(workspace, lane.get("output_path"), f"style lane {idx} output", failures)
         if output_path and f"{os.sep}preview{os.sep}" in str(output_path):
             failures.append(f"style lane {idx} output cannot be a PPTX preview image: {output_path}")
+        if output_path:
+            check_not_html_backed_image(output_path, f"style lane {idx} output", failures)
+            width, height = image_size(output_path)
+            if min_contact_width and min_contact_height:
+                if not width or not height:
+                    failures.append(f"style lane {idx} output dimensions could not be read: {output_path}")
+                elif width < min_contact_width or height < min_contact_height:
+                    failures.append(
+                        f"style lane {idx} output must be at least {min_contact_width}x{min_contact_height}; "
+                        f"got {width}x{height}"
+                    )
         invariance = lane.get("invariance_check", {})
         for key in (
             "slide_count_ok",
@@ -426,6 +619,19 @@ def check_style_gate(
                 failures.append(f"style contact sheet missing style_lane_id: {sheet}")
             if not raw_sheet.get("aesthetic_family"):
                 failures.append(f"style contact sheet missing aesthetic_family: {sheet}")
+            if raw_sheet.get("style_variation_scope") not in {None, "visual_aesthetic_only"}:
+                failures.append(f"style contact sheet style_variation_scope must be visual_aesthetic_only: {sheet}")
+            term = contains_content_style_term(
+                {
+                    "style_lane_id": raw_sheet.get("style_lane_id"),
+                    "name": raw_sheet.get("name"),
+                    "aesthetic_family": raw_sheet.get("aesthetic_family"),
+                }
+            )
+            if term:
+                failures.append(
+                    f"style contact sheet {sheet} uses content/narrative term {term!r} as a style label"
+                )
             if raw_sheet.get("narrative_lock_ref") != recorded_fingerprint:
                 failures.append(f"style contact sheet narrative_lock_ref must match narrative lock: {sheet}")
             if not raw_sheet.get("prompt_path"):
@@ -454,6 +660,16 @@ def check_style_gate(
             failures.append(f"style contact sheet cannot be a final output image: {path}")
         if f"{os.sep}preview{os.sep}" in normalized:
             failures.append(f"style contact sheet cannot be a PPTX preview image: {path}")
+        check_not_html_backed_image(path, "style contact sheet", failures)
+        width, height = image_size(path)
+        if min_contact_width and min_contact_height:
+            if not width or not height:
+                failures.append(f"style contact sheet dimensions could not be read: {path}")
+            elif width < min_contact_width or height < min_contact_height:
+                failures.append(
+                    f"style contact sheet must be at least {min_contact_width}x{min_contact_height}; "
+                    f"got {width}x{height}: {path}"
+                )
     if selected_option and sheet_options and selected_option not in sheet_options:
         failures.append(f"style_brief.json selected_option {selected_option!r} is not in style_contact_sheets")
 
@@ -482,6 +698,10 @@ def check_reconstruction_manifest(
         failures.append("reconstruction_manifest.json must forbid ordinary table/card rebuilds")
     if global_rules.get("native_text_boxes_allowed_only_as_transparent_overlays") is not True:
         failures.append("reconstruction_manifest.json must restrict native text boxes to transparent overlays")
+    if global_rules.get("hidden_text_layer_does_not_count_as_editable") is not True:
+        failures.append("reconstruction_manifest.json must state hidden text layers do not count as editable output")
+    if global_rules.get("visible_native_overlays_required") is not True:
+        failures.append("reconstruction_manifest.json must require visible native editable overlays")
     expected_count = deck_spec.get("deck", {}).get("slide_count") or len(deck_spec.get("slides", []))
     slides = reconstruction_manifest.get("slides", [])
     if expected_count and len(slides) != expected_count:
@@ -505,12 +725,22 @@ def check_reconstruction_manifest(
             failures.append(
                 f"reconstruction slide {idx:03d} text_source_status must be one of {sorted(allowed_text_status)}"
             )
-        if slide.get("reconstruction_mode") not in {"pixel_locked_hybrid", "sliced_hybrid"}:
+        if slide.get("reconstruction_mode") not in {"pixel_locked_hybrid", "sliced_hybrid", "native_trace_hybrid"}:
             failures.append(
-                f"reconstruction slide {idx:03d} reconstruction_mode must be pixel_locked_hybrid or sliced_hybrid"
+                f"reconstruction slide {idx:03d} reconstruction_mode must be pixel_locked_hybrid, sliced_hybrid, or native_trace_hybrid"
             )
         if not slide.get("required_editable_overlays"):
             failures.append(f"reconstruction slide {idx:03d} missing required_editable_overlays")
+        coverage = slide.get("editable_overlay_coverage", {})
+        if not isinstance(coverage, dict):
+            failures.append(f"reconstruction slide {idx:03d} editable_overlay_coverage must be an object")
+            coverage = {}
+        if coverage.get("visible_native_text_overlay") is not True:
+            failures.append(
+                f"reconstruction slide {idx:03d} must have visible native text overlays; hidden/behind-image text does not count"
+            )
+        if int(coverage.get("visible_overlay_count") or 0) < 1:
+            failures.append(f"reconstruction slide {idx:03d} visible_overlay_count must be at least 1")
         output_slide = slide.get("output_slide_pptx")
         preview = slide.get("preview_path")
         if not output_slide:
@@ -532,6 +762,15 @@ def check_visual_contract(workspace: Path, deck_spec: dict, visual_contract: dic
     expected_count = deck_spec.get("deck", {}).get("slide_count") or len(deck_spec.get("slides", []))
     slides = visual_contract.get("slides", [])
     reconstruction_mode = is_reconstruction_mode(deck_spec.get("deck", {}).get("mode", ""))
+    quality_policy = check_image_quality_policy(
+        visual_contract.get("image_quality_policy"),
+        failures,
+        "visual_contract.json",
+    )
+    minimum_px = quality_policy.get("minimum_acceptable_comp_px") or {}
+    minimum_width = safe_int(minimum_px.get("width"))
+    minimum_height = safe_int(minimum_px.get("height"))
+    check_no_html_surrogates(workspace, failures)
     if not visual_contract.get("selected_style"):
         failures.append("visual_contract.json selected_style is empty")
     contact_sheet = visual_contract.get("contact_sheet")
@@ -542,8 +781,8 @@ def check_visual_contract(workspace: Path, deck_spec: dict, visual_contract: dic
     if visual_contract.get("per_slide_comps_complete") is not True:
         failures.append("visual_contract.json per_slide_comps_complete must be true before PPTX build")
     default_mode = visual_contract.get("default_reconstruction_mode")
-    if default_mode not in {"pixel_locked_hybrid", "sliced_hybrid", "native_rebuild"}:
-        failures.append("visual_contract.json default_reconstruction_mode must be pixel_locked_hybrid, sliced_hybrid, or native_rebuild")
+    if default_mode not in {"pixel_locked_hybrid", "sliced_hybrid", "native_trace_hybrid", "native_rebuild"}:
+        failures.append("visual_contract.json default_reconstruction_mode must be pixel_locked_hybrid, sliced_hybrid, native_trace_hybrid, or native_rebuild")
     if (
         visual_contract.get("pixel_locked_hybrid_required") is not True
         and visual_contract.get("explicit_downgrade_accepted") is not True
@@ -571,12 +810,57 @@ def check_visual_contract(workspace: Path, deck_spec: dict, visual_contract: dic
             failures.append(
                 f"slide {idx:03d} approved comp cannot be a PPTX preview/output image: {path}"
             )
+        check_not_html_backed_image(path, f"slide {idx:03d} approved comp", failures)
+        actual_width, actual_height = image_size(path)
+        if minimum_width and minimum_height:
+            if not actual_width or not actual_height:
+                failures.append(f"slide {idx:03d} approved comp dimensions could not be read: {path}")
+            elif actual_width < minimum_width or actual_height < minimum_height:
+                failures.append(
+                    f"slide {idx:03d} approved comp file must be at least {minimum_width}x{minimum_height}; "
+                    f"got {actual_width}x{actual_height}: {path}"
+                )
         if not slide.get("visual_archetype"):
             failures.append(f"slide {idx:03d} missing visual_archetype in visual_contract.json")
+        clarity = slide.get("clarity_review")
+        if not isinstance(clarity, dict):
+            failures.append(f"slide {idx:03d} missing clarity_review in visual_contract.json")
+            clarity = {}
+        else:
+            if clarity.get("status") not in {"approved", "user_accepted_risk"}:
+                failures.append(
+                    f"slide {idx:03d} clarity_review.status must be approved or user_accepted_risk"
+                )
+            if clarity.get("blocking_blur") is not False:
+                failures.append(f"slide {idx:03d} clarity_review.blocking_blur must be false")
+            if clarity.get("text_legibility") not in {"approved", "acceptable", "user_accepted_risk"}:
+                failures.append(f"slide {idx:03d} clarity_review.text_legibility must be approved or acceptable")
+            if clarity.get("icon_line_clarity") not in {"approved", "acceptable", "user_accepted_risk"}:
+                failures.append(f"slide {idx:03d} clarity_review.icon_line_clarity must be approved or acceptable")
+            if clarity.get("edge_sharpness") not in {"approved", "acceptable", "user_accepted_risk"}:
+                failures.append(f"slide {idx:03d} clarity_review.edge_sharpness must be approved or acceptable")
+            if not clarity.get("small_text_strategy"):
+                failures.append(f"slide {idx:03d} clarity_review.small_text_strategy is missing")
+            dimensions = clarity.get("image_dimensions_px") or {}
+            width = safe_int(dimensions.get("width"))
+            height = safe_int(dimensions.get("height"))
+            if width and height and minimum_width and minimum_height:
+                if width < minimum_width or height < minimum_height:
+                    failures.append(
+                        f"slide {idx:03d} clarity_review.image_dimensions_px must be at least "
+                        f"{minimum_width}x{minimum_height}; got {width}x{height}"
+                    )
+            elif minimum_width and minimum_height:
+                failures.append(f"slide {idx:03d} clarity_review.image_dimensions_px is missing")
+        source_type = slide.get("image_source_type") or clarity.get("image_source_type")
+        if not reconstruction_mode and source_type != "imagegen":
+            failures.append(f"slide {idx:03d} image_source_type must be imagegen in generated-deck mode")
+        if slide.get("rendered_from_html") is True or slide.get("browser_rendered") is True:
+            failures.append(f"slide {idx:03d} approved comp cannot be rendered from HTML/browser output")
         reconstruction_mode = slide.get("reconstruction_mode")
-        if reconstruction_mode not in {"pixel_locked_hybrid", "sliced_hybrid", "native_rebuild"}:
+        if reconstruction_mode not in {"pixel_locked_hybrid", "sliced_hybrid", "native_trace_hybrid", "native_rebuild"}:
             failures.append(
-                f"slide {idx:03d} reconstruction_mode must be pixel_locked_hybrid, sliced_hybrid, or native_rebuild"
+                f"slide {idx:03d} reconstruction_mode must be pixel_locked_hybrid, sliced_hybrid, native_trace_hybrid, or native_rebuild"
             )
         if reconstruction_mode == "native_rebuild" and visual_contract.get("explicit_downgrade_accepted") is not True:
             comparison = slide.get("comparison_gate", {})
@@ -595,10 +879,53 @@ def check_visual_contract(workspace: Path, deck_spec: dict, visual_contract: dic
             require_file(workspace, backplate_path, f"slide {idx:03d} comp backplate", failures)
             if backplate.get("insert_first") is not True:
                 failures.append(f"slide {idx:03d} comp_backplate.insert_first must be true")
+        if reconstruction_mode == "native_trace_hybrid":
+            trace_plan = slide.get("native_trace_plan")
+            if not isinstance(trace_plan, dict):
+                failures.append(f"slide {idx:03d} native_trace_plan must be an object")
+                trace_plan = {}
+            if (
+                trace_plan.get("source_image_used_as_coordinate_reference") is not True
+                and trace_plan.get("source_image_used_as_coordinate_blueprint") is not True
+            ):
+                failures.append(
+                    f"slide {idx:03d} native_trace_plan.source_image_used_as_coordinate_reference must be true"
+                )
+            if int(trace_plan.get("native_element_count") or 0) < 10:
+                failures.append(f"slide {idx:03d} native_trace_plan.native_element_count must be at least 10")
+            if int(trace_plan.get("visible_text_box_count") or 0) < 3:
+                failures.append(f"slide {idx:03d} native_trace_plan.visible_text_box_count must be at least 3")
+            if trace_plan.get("render_fix_verify_loop") is not True:
+                failures.append(f"slide {idx:03d} native_trace_plan.render_fix_verify_loop must be true")
         if not slide.get("text_mask_plan"):
             failures.append(f"slide {idx:03d} missing text_mask_plan in visual_contract.json")
-        if not slide.get("editable_overlay_plan"):
+        else:
+            mask_plan = slide.get("text_mask_plan")
+            mask_text = json.dumps(mask_plan, ensure_ascii=False).lower()
+            if "none" in mask_text or "no mask" in mask_text or "不遮" in mask_text:
+                failures.append(
+                    f"slide {idx:03d} text_mask_plan cannot skip masking editable text regions"
+                )
+        overlay_plan = slide.get("editable_overlay_plan")
+        if not overlay_plan:
             failures.append(f"slide {idx:03d} missing editable_overlay_plan in visual_contract.json")
+        else:
+            overlay_text = json.dumps(overlay_plan, ensure_ascii=False).lower()
+            if "hidden" in overlay_text or "behind" in overlay_text or "backplate后" in overlay_text or "背后" in overlay_text:
+                failures.append(
+                    f"slide {idx:03d} editable_overlay_plan cannot count hidden/behind-backplate text as editable"
+                )
+            if isinstance(overlay_plan, dict):
+                if overlay_plan.get("visible_native_text_overlay") is not True:
+                    failures.append(
+                        f"slide {idx:03d} editable_overlay_plan.visible_native_text_overlay must be true"
+                    )
+                if int(overlay_plan.get("visible_overlay_count") or 0) < 1:
+                    failures.append(f"slide {idx:03d} editable_overlay_plan.visible_overlay_count must be at least 1")
+            else:
+                failures.append(
+                    f"slide {idx:03d} editable_overlay_plan must be an object with visible native overlay coverage"
+                )
 
 
 def check_reviews(workspace: Path, deck_spec: dict, failures: list[str]) -> None:

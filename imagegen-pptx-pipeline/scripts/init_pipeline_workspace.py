@@ -41,6 +41,29 @@ BUILT_IN_TASTE_ANTI_PATTERNS = [
     "flat image-only slide without editable overlays",
 ]
 
+DEFAULT_IMAGE_QUALITY_POLICY = {
+    "policy_id": "imagegen-max-clarity-v1",
+    "enabled": True,
+    "prompt_detail_level": "highest_available",
+    "requested_single_slide_canvas_px": {"width": 3840, "height": 2160},
+    "minimum_acceptable_comp_px": {"width": 1920, "height": 1080},
+    "minimum_acceptable_contact_sheet_px": {"width": 2400, "height": 1350},
+    "prompt_requires_crisp_text_and_icons": True,
+    "review_required_before_pptx": True,
+    "small_text_policy": (
+        "Avoid unreadable microtext in ImageGen comps. Main titles, key numbers, labels, "
+        "and page markers must be sharp enough for visual review; exact final small copy "
+        "comes from deck_spec.json during PPTX reconstruction."
+    ),
+    "blur_rejection_criteria": [
+        "soft or blurry main title",
+        "blurred key numbers",
+        "muddy icons or line art",
+        "low-contrast small labels",
+        "compression artifacts around text or diagram strokes",
+    ],
+}
+
 
 def slugify(value: str) -> str:
     value = value.strip().lower()
@@ -248,6 +271,8 @@ def main() -> int:
         "selection_mode": "ask_user",
         "full_automation_trigger": "",
         "generation_mode": "parallel_style_lanes",
+        "style_variation_scope": "visual_aesthetic_only",
+        "content_strategy_locked": False,
         "visual_ambition": "premium business deck with template fidelity",
         "deck_profile": "",
         "template_is_hard_constraint": args.mode == "template-following",
@@ -309,7 +334,8 @@ def main() -> int:
                 }
             ],
             "style_principles": [
-                "each direction differs by aesthetic family, composition grammar, proof-object expression, density, depth, and visual rhythm",
+                "each direction differs by visual aesthetic only: art style, material, depth, typography feel, icon/illustration style, chart rendering, composition rhythm, and density",
+                "style lanes must not rename or replace the selected narrative treatment, slide content, claim, data, or proof object",
                 "single-slide comps must preserve a clear visual archetype",
                 "PPTX reconstruction must retain the approved comp's reader-facing visual grammar",
             ],
@@ -330,6 +356,7 @@ def main() -> int:
         "selected_option": "",
         "style_contact_sheets": [],
         "option_safety_status": "not_started",
+        "image_quality_policy": DEFAULT_IMAGE_QUALITY_POLICY,
     }
     template_frame_map = {
         "source_pptx": "",
@@ -356,6 +383,7 @@ def main() -> int:
         "default_reconstruction_mode": "pixel_locked_hybrid",
         "pixel_locked_hybrid_required": True,
         "minimum_non_title_rich_visual_ratio": 0.6,
+        "image_quality_policy": DEFAULT_IMAGE_QUALITY_POLICY,
         "slides": [],
     }
     reconstruction_manifest = {
@@ -374,6 +402,8 @@ def main() -> int:
             "visual_fidelity_priority": "pixel_locked_hybrid",
             "ordinary_table_or_card_rebuild_forbidden": True,
             "native_text_boxes_allowed_only_as_transparent_overlays": True,
+            "hidden_text_layer_does_not_count_as_editable": True,
+            "visible_native_overlays_required": True,
         },
         "slides": [],
         "open_questions": [],

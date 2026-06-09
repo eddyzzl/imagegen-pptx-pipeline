@@ -17,11 +17,11 @@ Build an editable PPTX deck through a controlled pipeline, or reconstruct an edi
 8. Use `Presentations` for comp-faithful editable PPTX reconstruction, render previews, and export.
 9. Use stage-specific reviewer roles or subagents, then run a final all-role review council before export.
 
-Do not treat generated images as the content source of truth. Generated images are visual blueprints; `deck_spec.json` owns final text, numbers, slide order, and claims.
+Do not treat generated images as the content source of truth. Generated images are visual reference comps; `deck_spec.json` owns final text, numbers, slide order, and claims.
 
 Do not let editable PPTX reconstruction collapse ImageGen visual comps into generic tables, square card grids, or plain text layouts. The final PPTX must preserve the selected comp's visual grammar, proof-object shape, rhythm, density, hierarchy, and major diagram composition unless an explicit source, editability, or template constraint requires a documented deviation.
 
-Default reconstruction mode is **pixel-locked hybrid**, not native-only redraw: use the approved slide comp as a full-slide or sliced visual backplate, mask/replace main text regions, and overlay editable native PPT text, numbers, labels, and simple shapes. A slide may use the whole comp as a visual backplate; it fails only if the final slide is just one flat image with no editable main information.
+Default reconstruction mode is **pixel-locked hybrid**, not native-only redraw: use the approved slide comp as a full-slide or sliced visual backplate, mask/replace main text regions, and overlay visible editable native PPT text, numbers, labels, and simple shapes. A slide may use the whole comp as a visual backplate only when the required editable overlays are visible on the rendered slide surface. Hidden text boxes, speaker notes, off-canvas text, or text placed behind the backplate do not count as editable reconstruction.
 
 ## Hard Invariants
 
@@ -31,15 +31,19 @@ Default reconstruction mode is **pixel-locked hybrid**, not native-only redraw: 
 - **Image2/ImageGen owns the visual design:** generated images are not merely mood boards or loose style hints. After style selection, each page image is the approved visual construction drawing for that slide.
 - **Slide intent is confirmed before narrative:** after content/source review, generate a `slide_intent_matrix.md` that proposes each slide's title, core idea, proof goal, available evidence, and unresolved gaps. Ask the user to confirm or edit it before narrative options.
 - **Narrative is confirmed before visual style:** after content lock, generate a `narrative_matrix.md` with multiple narrative treatments as columns and slides as rows. Ask the user to choose or edit one treatment before any ImageGen style contact sheets.
+- **Style lanes are visual skins, not story lanes:** after the narrative matrix is locked, style options may differ only by art direction: flat/editorial, glass, skeuomorphic material, technical schematic, motion/animation-inspired, illustration, 3D/spatial, luxury print, density, typography feel, icon language, chart rendering, depth, and texture. Do not name or define style options by content strategy, business narrative, proof object, or page argument. Labels such as "evidence chain", "risk system map", "growth maturity", "business command center", "achievement scoreboard", or their Chinese equivalents are narrative/content lanes and fail style selection.
 - **Style options must be meaningfully different:** do not offer near-identical variants that only change color, title chips, or minor card spacing. Directions must differ primarily by aesthetic family, composition grammar, material/depth treatment, chart/diagram language, rhythm, and density while respecting any template frame.
 - **Style does not rewrite the story:** all style options must preserve `deck_spec.json` and the selected narrative treatment: slide order, section flow, slide titles, claims, required data, sources, core proof objects, and per-slide narrative intent. A visual style lane may express the same narrative differently, but it must not change the deck's narrative logic.
+- **No HTML or browser-rendered surrogate comps:** do not create HTML/CSS/SVG blueprints, browser screenshots, React pages, canvas renders, or ordinary static previews and then save them as `styles/*contact-sheet.png` or `slides/slide-XXX-comp.png`. Full pipeline visual options and per-slide comps must be generated through ImageGen/Image2. HTML is not an acceptable substitute for ImageGen at style or comp stages.
 - **Per-slide ImageGen comps are required:** after style selection, every output slide must have an approved `slides/slide-XXX-comp.png` generated as an independent 16:9 single-slide comp. A contact sheet alone is never enough to build the final PPTX.
+- **Image clarity is a hard gate:** ImageGen contact sheets and single-slide comps must request the highest available detail/resolution, crisp text edges, clean vector-like icons, sharp fine lines, and no blur/compression artifacts. Record `image_quality_policy` in `style_brief.json` and `visual_contract.json`. Every slide comp must have `clarity_review.status=approved` or explicit user-accepted risk before PPTX work.
 - **Images are iterated before PPTX:** subagents/reviewer roles review each single-slide comp. P0/P1 findings must trigger targeted ImageGen regeneration of that slide before PPTX authoring.
 - **PPTX is a pixel-locked hybrid reconstruction of the approved comp:** final slides must preserve the approved comp's appearance by default. Use full-slide or sliced comp backplates when native shape rebuilding would degrade the design, then overlay editable main text/numbers/simple shapes from `deck_spec.json`. Native-only redraw is allowed only when it visibly matches the comp or the user explicitly accepts a fidelity downgrade.
 - **Editable does not mean fully native:** complex diagrams, depth fields, textures, glow, glass, illustrations, screenshots, dense icons, and generated visual systems may remain image layers. Required editability applies to main titles, claims, body text, key numbers, labels, footers, and simple callouts unless a user-approved exception is documented.
+- **Visible editability is mandatory:** editable content must be visible and selectable in the final slide itself. Speaker notes, hidden layers, transparent text, off-slide text, or text covered by a full-slide image are useful references but fail the editability requirement.
 - **Reconstruction-only may skip planning, not fidelity:** when the user supplies final per-slide images, use `reconstruction-only` mode. Skip content/narrative/style generation, but still require per-slide image registration, exact text/OCR verification, visual contract, page-level reconstruction review, rendered previews, and final council.
 - **Page-sharded reconstruction is preferred:** in reconstruction-only or repair mode, build each slide as an independent `slide-modules/slide-XXX.pptx`, review it against the source image, then merge approved slide modules. This isolates failures and prevents one bad page from degrading the deck.
-- **No ordinary visual rebuild:** never replace an approved visual comp with a normal-looking table, card grid, default PPT text block, or square-box diagram. Native text boxes are allowed only as transparent/editable overlays that match the source typography and placement.
+- **No ordinary visual rebuild:** never replace an approved visual comp with a normal-looking table, card grid, default PPT text block, or square-box diagram. Native text boxes are allowed only as visible editable overlays that match the source typography and placement.
 - **No self-certified comps:** never use final PPTX previews, template-starter previews, or output contact sheets as approved ImageGen comps. Approved comps must be independently generated files under `slides/slide-XXX-comp.png` or an explicitly documented equivalent comp path.
 - **No silent downgrade:** do not switch to a style-inspired rebuild, blank-template rebuild, native-only redraw, table-only/card-only simplification, flat corporate grid, or generic PPT layout unless the user explicitly accepts that downgrade in `user_decisions.md`.
 - **Advanced design bar:** unless the user asks for a plain compliance deck, visual comps should use richer slide-specific diagrams, layered composition, controlled depth, custom chart language, and executive polish. A deck made mostly of plain tables, equal rectangles, or default card grids fails this skill.
@@ -190,7 +194,7 @@ Write and lock:
 
 - `reconstruction_manifest.json`: source image path, text source status, reconstruction mode, per-slide output path, and page-sharding status.
 - minimal `deck_spec.json`: slide count, slide IDs, exact overlay text when known, and editability targets. Set `deck.lock_state="locked"` after text is provided or OCR is verified/accepted.
-- `visual_contract.json`: each supplied image becomes the approved comp with `reconstruction_mode="pixel_locked_hybrid"` unless explicitly overridden.
+- `visual_contract.json`: each supplied image becomes the approved comp with `reconstruction_mode="pixel_locked_hybrid"` unless explicitly overridden. Use `native_trace_hybrid` when the user prioritizes visible editability and the slide can be traced into native PPT elements without collapsing the design.
 
 In this mode:
 
@@ -205,9 +209,10 @@ Page-sharded build rules:
 3. Mask/cover source-image text areas that will be editable.
 4. Overlay editable native PPT text/numbers/labels/page markers.
 5. Keep complex visuals as image layers. Do not redraw them as ordinary PPT tables, cards, or boxes.
-6. Render `preview/slide-XXX-pptx.png` and compare against the source image before merging.
-7. If a slide fails visual fidelity, repair only that slide module and rerender.
-8. Merge approved slide modules into the final deck only after all page-level P0/P1 findings are resolved or explicitly accepted.
+6. Verify that required editable overlays are visible on the slide surface and not hidden behind the backplate.
+7. Render `preview/slide-XXX-pptx.png` and compare against the source image before merging.
+8. If a slide fails visual fidelity or visible editability, repair only that slide module and rerender.
+9. Merge approved slide modules into the final deck only after all page-level P0/P1 findings are resolved or explicitly accepted.
 
 If the user provides only a contact sheet, stop and ask for individual high-resolution slide images unless they explicitly accept lower-fidelity reconstruction.
 
@@ -362,11 +367,22 @@ Before generating style options, determine how many directions the user wants:
 - If the user requested full automation, default to 4 directions.
 - Recommended range: 3 to 6 directions. Fewer than 3 weakens exploration; more than 6 usually slows review.
 
-Write `style_brief.json` with `direction_count`, `generation_mode`, `narrative_lock`, `selected_narrative_id`, `visual_ambition`, `diversity_axes`, `user_style_preferences`, `candidate_directions`, and `style_lanes`.
+Write `style_brief.json` with `direction_count`, `generation_mode`, `narrative_lock`, `selected_narrative_id`, `visual_ambition`, `diversity_axes`, `user_style_preferences`, `candidate_directions`, `style_lanes`, and `image_quality_policy`.
+
+Set `style_brief.json.style_variation_scope="visual_aesthetic_only"` and `content_strategy_locked=true` before ImageGen style exploration. The selected narrative, per-slide content, proof object, and presentation treatment are already locked; do not repackage them as style lanes.
+
+Set `image_quality_policy` to request maximum available ImageGen clarity:
+
+- `prompt_detail_level="highest_available"`
+- `requested_single_slide_canvas_px` at least `3840x2160` when the generator supports it
+- `minimum_acceptable_comp_px` at least `1920x1080`
+- `minimum_acceptable_contact_sheet_px` at least `2400x1350`
+- crisp text/icon/fine-line requirements included in every ImageGen prompt
+- blur rejection criteria recorded before any image is approved
 
 Style direction generation must be ImageGen-based. The preferred path is **parallel style lanes**:
 
-1. Create one lane per option under `style_lanes`, each with a distinct `aesthetic_family`, design premise, prompt path, and expected output path.
+1. Create one lane per option under `style_lanes`, each with a distinct visual `aesthetic_family`, `visual_skin`, prompt path, and expected output path. Do not use content/story/proof-object labels as lane IDs, names, or premises.
 2. When the user requested or approved subagent collaboration and subagent tools are available, spawn one `style-lane-art-director` subagent per lane. Each lane independently writes its prompt and calls ImageGen for exactly one full-deck contact sheet preview.
 3. When subagents are unavailable, not approved, or cannot call ImageGen, run the same lanes sequentially yourself, but keep separate prompts and separate ImageGen calls. Do not collapse all directions into one generic multi-option prompt unless the runtime only supports that fallback.
 4. Record each contact sheet in `style_brief.json.style_contact_sheets` with `generator="imagegen"`, `style_lane_id`, `aesthetic_family`, `prompt_path`, and `path`.
@@ -377,9 +393,10 @@ Recommended aesthetic families are task-dependent. Pick the best fit from the bu
 - `motion-inspired`: static slides that borrow animation/keyframe rhythm, directional flow, kinetic paths, staged reveals, and motion-like composition.
 - `skeuomorphic-material`: tactile material, subtle dimensionality, physical controls, object-like evidence modules.
 - `glassmorphism-blur`: blurred glass, layered translucency, restrained depth, high contrast and readability.
-- `tech-systems`: technical architecture, data lineage, control planes, luminous but disciplined system maps.
+- `technical-schematic`: visual language of precise schematics, grids, drafting lines, and instrument-like annotations without changing the proof object.
 - `editorial-literary`: publication-like composition, narrative pacing, elegant typography, image/quote/essay rhythm.
-- `data-command-center`: dense executive dashboards, scorecards, deltas, bridges, and operational control surfaces.
+- `luxury-print`: high-end annual-report print language, crisp rules, generous but purposeful hierarchy, premium paper-like texture.
+- `animated-illustration`: polished static illustration/animation-frame language with simplified forms and vivid but restrained narrative graphics.
 - `brand-world`: strong brand atmosphere, product/company identity, visual world-building with verified assets only.
 
 Users may specify desired or forbidden aesthetic families. If they do not, the agent recommends families that fit the deck profile, audience, template, and source material. All selected families must still meet the premium taste bar; "flat", "tech", "glass", or "cartoon/animation-inspired" are not excuses for cheap, generic, or unreadable slides.
@@ -391,13 +408,14 @@ Require:
 - all slides in correct order
 - 16:9 slide thumbnails
 - genuinely different visual systems, not recolors
-- each direction has a named aesthetic family and design premise, for example "premium-flat executive evidence", "tech-systems architecture", "motion-inspired growth arc", "glassmorphism decision cockpit", "skeuomorphic material workflow", or "editorial-literary narrative"
-- direction premises fit the selected `deck_profile`; for example, product decks need product/benefit/user-flow options, company decks need capability/brand/world-view options, and model/technical decks need architecture/methodology/validation options
+- each direction has a named visual aesthetic family, for example "premium-flat", "glassmorphism-blur", "skeuomorphic-material", "technical-schematic", "editorial-print", "animated-illustration", "spatial-3d", or "luxury-print". Do not name options by narrative/content patterns such as evidence, risk, growth, roadmap, command center, or strategy.
+- direction aesthetics fit the selected `deck_profile` and template while preserving the same locked story; the deck profile informs taste and density, not a new narrative lane
 - materially different visual style grammar: one option may emphasize refined flat structure, another glass depth and translucent layers, another motion-like flow paths, another tactile material modules, another technical systems maps, another editorial narrative pacing
 - same narrative logic: every option must keep the same slide count, order, section flow, core title meaning, claims, sources, proof-object intent from `deck_spec.json`, and selected per-slide narrative treatment from `narrative_plan.json`
 - richer design than a flat table/card deck: use custom diagrams, focal objects, controlled layering, depth, high-quality chart language, and slide-specific visual metaphors where appropriate
 - no fake logos, fake UI, fake people, or invented metrics
 - enough legibility to judge structure, not final copy accuracy
+- enough sharpness to judge typography, icon style, fine lines, chart strokes, and module boundaries; blurry or compressed contact sheets must be regenerated before user selection
 - when a template/source PPTX exists, attach the template contact sheet and require every option to keep the template's visible frame, title/footer/page system, typography feel, and brand chrome; explore only within the template's allowed content zones
 
 If the user explicitly wants full automation, pick the best option with the style rubric and record the decision in `qa/style-selection.md`. Otherwise show all ImageGen contact sheets and ask the user to choose. Generic delegation like "帮我做一个 PPT" is not explicit full automation.
@@ -438,11 +456,14 @@ For the selected style, call ImageGen once per slide. This phase is mandatory. E
 - Use the selected contact sheet as the visual system.
 - In template-following mode, attach the mapped template/source slide screenshot from `template-frame-map.json` and require the comp to preserve that template frame.
 - Keep slide numbers and major text visible, but do not rely on ImageGen for exact final text.
+- Request the highest available single-slide clarity/detail. Prefer a 4K-like 3840x2160 16:9 canvas when supported. Demand crisp vector-like icons, clean anti-aliased edges, sharp chart strokes, high-contrast labels, and no blur/glow over text.
 - Save files as `slides/slide-001-comp.png`, `slides/slide-002-comp.png`, etc.
 - Save ImageGen prompts under `prompts/slide-001-comp.txt`, `prompts/slide-002-comp.txt`, etc. Record generated image file paths in `deck_spec.json` and `visual_contract.json`.
+- Do not create `slides/*.html`, `styles/*.html`, `slides/blueprints/*`, or any browser-rendered stand-in for the comp. If an HTML/browser preview exists for a slide, it is a blocked surrogate and the slide must be regenerated through ImageGen.
 - Do not build PPTX until every target slide has a saved comp path, selected-style reference, template source slide if applicable, and review status.
 - If ImageGen fails or returns a contact sheet/grid instead of one slide, retry with the single-slide prompt. If it still fails, block or ask the user; do not proceed with a generic editable slide.
 - If the single-slide comp looks flatter, simpler, or less designed than the selected contact sheet direction, regenerate it. Do not accept "clean but generic" comps unless the selected direction itself is deliberately plain.
+- If the single-slide comp is soft, blurry, low-resolution, compression-damaged, or has muddy icons/fine lines, regenerate it with a targeted clarity prompt before any PPTX reconstruction.
 
 ### 10. Review And Iterate Visual Comps
 
@@ -460,6 +481,7 @@ Visual-comp reviewer group:
 - `asset-authenticity`: checks logos, screenshots, people, product UI, icons, and identity assets for provenance and non-fabrication.
 - `template-fidelity`: required when a template/source PPTX exists; checks the comp preserves the mapped source slide frame and protected elements.
 - `accessibility-readability`: checks contrast, projection readability, small text, visual noise, and color-only encoding.
+- `visual-clarity`: checks resolution, sharpness, fine-line clarity, icon edge quality, text anti-aliasing, blur/compression artifacts, and whether small text should be regenerated, enlarged, simplified, split, or deferred to PPTX native text.
 
 Read `references/subagent-rubrics.md` for reviewer prompts and JSON feedback format.
 
@@ -467,6 +489,7 @@ Iteration rule:
 
 - Fix all P0/P1 blockers before moving from contact sheets to slide comps or from slide comps to PPTX.
 - Fix P0/P1 comp blockers by targeted ImageGen regeneration of that slide first. Do not patch around a failed comp directly in PPTX unless the finding is only exact text correction from `deck_spec.json`.
+- Treat blurry title text, unreadable key numbers, muddy icons, soft fine lines, low-resolution comps, or compression artifacts as P1 visual-comp blockers unless the user explicitly accepts the risk.
 - Run at most 2 automated visual-comp iterations unless the user asks for more.
 - Prefer targeted prompt edits over redesigning the whole deck.
 
@@ -478,11 +501,12 @@ For each slide record:
 
 - approved comp path
 - comp review status and unresolved accepted risks
+- clarity review status, source image dimensions, text/icon/fine-line clarity, blocking blur status, and small-text handling strategy
 - template/source slide inherited by this slide, if any
 - protected template elements that must survive final PPTX reconstruction
 - selected style option
 - visual archetype: system map, maturity arc, loop, funnel, radial, timeline, swimlane, matrix, scorecard, dashboard, process chain, comparison, or other
-- reconstruction mode: `pixel_locked_hybrid` by default, `sliced_hybrid` when text/diagram regions need separate editable overlays, or `native_rebuild` only with explicit fidelity evidence or user acceptance
+- reconstruction mode: `pixel_locked_hybrid` by default, `sliced_hybrid` when text/diagram regions need separate editable overlays, `native_trace_hybrid` when the source image should be hand-traced into mostly native editable PPT elements, or `native_rebuild` only with explicit fidelity evidence or user acceptance
 - comp backplate plan: full-slide comp image or cropped comp layers that must be inserted before native overlays
 - text mask plan: regions where comp-rendered text should be covered before adding editable PPT text
 - must-preserve composition: key regions, flow direction, diagram geometry, focal object, whitespace, and visual hierarchy
@@ -498,12 +522,14 @@ If ImageGen produced only a full-deck contact sheet and not per-slide comps, gen
 Do not proceed to PPTX build until:
 
 - every slide has an approved `slide-XXX-comp.png`
+- every slide has `clarity_review.status=approved` or a documented user-accepted risk; low-resolution or blurry comps are blocked
 - every slide has a reconstruction mode, comp backplate plan, editable overlay plan, and text mask plan
 - every slide has a visual archetype and native reconstruction plan
 - every template-following slide has a mapped source slide and protected template elements
 - at least 60% of non-title slides use a non-table proof object when the selected style contains diagrams or visual systems
 - no slide's planned proof object is weaker than `deck_spec.json.proof_object`
 - visual-fidelity reviewer has no P0/P1 findings
+- visual-clarity reviewer has no P0/P1 findings
 - `check_pipeline_gates.py --stage before-pptx` passes
 
 Read `references/schemas.md` for `visual_contract.json`.
@@ -518,6 +544,7 @@ Reconstruction modes:
 
 - `pixel_locked_hybrid` (default): place the approved comp as a full-slide image backplate, cover/mask text areas that must become editable, then overlay native PPT text, key numbers, labels, simple shapes, and page furniture. This gives the highest visual fidelity.
 - `sliced_hybrid`: crop the comp into stable visual layers or regions, omit/mask text-heavy regions, then rebuild those regions natively. Use this for dense slides where text editability is important.
+- `native_trace_hybrid`: use the approved comp as a coordinate reference, then rebuild the slide from native PPT shapes, text boxes, connectors, icons, arrows, and chart primitives. Keep only genuinely complex textures, photos, tiny labels, or hard-to-recreate visual details as image snippets. Use this when the user rejects image-only/hidden-text output and wants the rendered slide itself to be substantially editable.
 - `native_rebuild`: rebuild with native shapes/charts only. Use only when it passes preview comparison or the user explicitly accepts that it will not be pixel-faithful.
 
 For **template-following** mode:
@@ -526,7 +553,7 @@ For **template-following** mode:
 - Start from the mapped source slide in `template-frame-map.json` or a clearly compatible source layout; never start from a blank slide when a template slide exists.
 - Preserve source layout grammar, typography, palette, logos, footer/page markers, title furniture, and brand chrome.
 - Do not rebuild from blank JSX, mutate OOXML directly, or use LibreOffice save-as.
-- Treat ImageGen comps as the approved visual blueprint inside the inherited template canvas; the final deck must still inherit from duplicated template/source slides.
+- Treat ImageGen comps as the approved visual reference inside the inherited template canvas; the final deck must still inherit from duplicated template/source slides.
 - Preserve the approved comp's proof-object archetype and composition inside the inherited template canvas. Template-following is not permission to replace a system map, loop, radial, maturity arc, or workflow comp with a generic table/card grid.
 - Use pixel-locked hybrid reconstruction aggressively: insert the approved comp or sliced comp layers first, then rebuild main text and simple geometry as native PPT elements. Complex backgrounds, textures, depth, illustrations, and diagrams should remain image layers when native rebuilding would collapse the design.
 - If the inherited template cannot support the approved comp's visual expression, split the slide, choose a more suitable source slide, regenerate the comp within the template frame, or document a P1 deviation and ask the user. Do not silently degrade the slide.
@@ -543,12 +570,22 @@ For **reconstruction-only** and **repair-existing-pptx** mode:
 - Treat each user-supplied slide image as the approved comp.
 - Build one independent PPTX module per slide under `slide-modules/slide-XXX.pptx`.
 - Do not create ordinary-looking native tables/cards/text blocks as a substitute for the image design.
-- Native text boxes are allowed only for editable overlays and must match the source image's typography, position, color, line breaks, and hierarchy.
+- Native text boxes are allowed only for visible editable overlays and must match the source image's typography, position, color, line breaks, and hierarchy.
 - Keep complex visual design, diagrams, shadows, depth, icons, and background systems as full-slide or sliced image backplates.
 - Render and approve each slide module before merging. Do not merge failed pages into the final deck.
 - Merge approved slide modules into `output/<deck-name>.pptx` only after all page-level previews pass `pptx-reconstruction-fidelity`.
 
-Never deliver a slide as only one flat image with no editable main information unless the user explicitly requests non-editable output. A whole-slide comp backplate is allowed and recommended when it is combined with editable overlays and documented retained-image areas.
+When using `native_trace_hybrid`:
+
+- Use the source image's real pixel dimensions to define a deterministic pixel-to-inch mapping. Record it in `visual_contract.json.native_trace_plan`.
+- Recreate the page's major native structure, not only text: section chips, cards, dividers, circles, arrows, connectors, flow bars, metric pills, simple tables, simple charts, and page furniture.
+- Use icon libraries such as lucide/react-icons or local SVGs rasterized to high-resolution PNG only when the exact icon is not required to be native editable. Keep icons visually consistent with the source.
+- Transcribe visible text carefully from the image and/or `deck_spec.json`; do not rely on OCR without human/agent verification for Chinese slides.
+- Do a render-fix-verify loop for each traced page: render to PNG, inspect for title wrapping, overlap, clipped bullets, wrong icon scale, uneven card gaps, and footer collisions, then repair and rerender.
+- Native trace is page-sharded by default. For multi-page decks, first build one representative high-complexity page as a calibration sample, then apply the learned scale, fonts, icon sizing, and QA thresholds to the remaining pages.
+- If a native-traced page still has P0/P1 visual issues after two repair passes, downgrade only the failing subregion to a sliced image layer and document that retained-image area.
+
+Never deliver a slide as only one flat image with no editable main information unless the user explicitly requests non-editable output. Never count hidden, transparent, off-canvas, notes-only, or behind-backplate text as editable main information. A whole-slide comp backplate is allowed and recommended when it is combined with visible editable overlays and documented retained-image areas.
 
 After building each slide, render a preview and compare it against the approved comp before moving on. P1 visual-fidelity or template-fidelity failures require slide-level iteration before final deck review.
 
@@ -566,6 +603,7 @@ Final council roles:
 - `template-fidelity` when a template/source deck exists
 - `color-brand`
 - `style-coherence`
+- `visual-clarity`
 - `accessibility-readability`
 - `layout-pptx-feasibility`
 - `visual-fidelity`
@@ -583,6 +621,7 @@ Blocking QA:
 - Main text and numbers are editable and match `deck_spec.json`.
 - No obvious typo, overflow, missing page number, malformed chart, or fake source.
 - Preview preserves approved composition, color, density, and hierarchy.
+- Approved comps and PPTX previews have no blocking blur, muddy icons, unreadable key numbers, or soft fine-line artifacts.
 - PPTX previews pass reconstruction-fidelity review against the approved comp; logical correctness without visual reconstruction is not enough.
 - Final PPTX preserves `visual_contract.json` archetypes; no unapproved collapse to table-only/card-only/default layouts.
 - Template-following decks pass source-template fidelity gates, preserve mapped template elements, and have no unapproved rebuild-from-blank slides.

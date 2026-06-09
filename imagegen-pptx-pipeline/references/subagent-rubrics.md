@@ -15,10 +15,10 @@ Use only the roles needed for the current phase.
 | narrative treatment selection | `narrative-treatment-strategist`, `content-integrity`, `source-data-verifier`, `audience-advocate`, `template-fidelity` when a template exists | no visual style exploration until narrative_matrix.md is reviewed, one narrative is selected, and narrative_plan.json is locked |
 | style count/direction planning | `design-diversity`, `taste-direction`, `style-lane-art-director`, `image-art-director`, `template-fidelity` when a template exists | no contact sheet until directions have materially different aesthetic families, profile fit, built-in taste compliance, narrative lock, and template-safe constraints |
 | style contact sheet selection | light P0 safety screen before user choice; after choice use `narrative-invariance`, `style-coherence`, `color-brand`, `executive-polish`, `design-diversity`, `taste-direction`, `image-art-director`, `template-fidelity` when a template exists | no single-slide comps until selected direction has no P0/P1 blockers |
-| single-slide comp review | `narrative-invariance`, `content-integrity`, `text-typography`, `visual-fidelity`, `image-art-director`, `layout-pptx-feasibility`, `chart-logic`, `asset-authenticity`, `template-fidelity` when a template exists, `accessibility-readability` | no visual contract or PPTX build until P0/P1 comp blockers resolved |
+| single-slide comp review | `narrative-invariance`, `content-integrity`, `text-typography`, `visual-fidelity`, `visual-clarity`, `image-art-director`, `layout-pptx-feasibility`, `chart-logic`, `asset-authenticity`, `template-fidelity` when a template exists, `accessibility-readability` | no visual contract or PPTX build until P0/P1 comp blockers resolved |
 | visual contract lock | `visual-fidelity`, `layout-pptx-feasibility`, `chart-logic`, `template-fidelity` when a template exists | no PPTX build until each slide has an approved comp, comp-faithful visual archetype, template mapping, reconstruction mode, comp backplate plan, text mask plan, editable overlay plan, and native reconstruction plan |
 | reconstruction-only input lock | `reconstruction-input-verifier`, `text-typography`, `layout-pptx-feasibility`, `template-fidelity` when a template exists | no PPTX build until every page has a source image, text source status, pixel_locked_hybrid visual contract, and page-sharded output plan |
-| page-sharded PPTX reconstruction | `pptx-reconstruction-fidelity`, `visual-fidelity`, `text-typography`, `layout-pptx-feasibility`, `accessibility-readability`, `template-fidelity` when a template exists | no merge until each `slide-modules/slide-XXX.pptx` preview matches the source image and has editable main information |
+| page-sharded PPTX reconstruction | `pptx-reconstruction-fidelity`, `visual-fidelity`, `visual-clarity`, `text-typography`, `layout-pptx-feasibility`, `accessibility-readability`, `template-fidelity` when a template exists | no merge until each `slide-modules/slide-XXX.pptx` preview matches the source image and has editable main information |
 | PPTX preview review | all relevant roles below, including `pptx-reconstruction-fidelity` | no export until every required role approves |
 | final synthesis | `deck-council-synthesizer` | write `qa/final-council.md` and final export decision |
 
@@ -175,7 +175,8 @@ Return Feedback JSON.
 
 ```text
 You are the design-diversity reviewer. Review style_brief.json and style option contact sheets.
-Check whether options differ materially in aesthetic family, design premise, composition grammar, chart/diagram language, density, background/depth treatment, material/texture, and title/section treatment. Recolored or lightly rearranged variants are P1.
+Check whether options differ materially in visual aesthetic family, art direction, material/depth treatment, typography feel, icon/illustration style, chart rendering, diagram styling, density, background treatment, texture, and title/section treatment. Recolored or lightly rearranged variants are P1.
+Flag P1 if style options are actually content/narrative/proof-object lanes, for example evidence-chain, risk-system-map, growth-maturity, roadmap, achievement-scoreboard, command-center, or Chinese equivalents such as 证据链、风控系统、经营驾驶舱、成长路线.
 If style_brief.direction_count is 0, selected_option is empty, or style_contact_sheets are missing, return P0 because style exploration was skipped.
 In template-following mode, verify the differences stay inside allowed content zones and do not alter protected template chrome.
 Return Feedback JSON.
@@ -186,10 +187,11 @@ Return Feedback JSON.
 ```text
 You are the style-lane-art-director for one style lane.
 Inputs are deck_spec.json, design_system.json, style_brief.json, narrative_lock, the assigned style_lanes entry, template screenshots if any, and references/taste-system.md.
-Your job is to create or review one ImageGen contact-sheet direction for the assigned `aesthetic_family`. The lane must use /imagegen and must output exactly one full-deck contact sheet.
-Check that the assigned aesthetic family drives composition grammar, proof-object treatment, material/depth, typography, density, and chart/diagram language. It must not be a recolor.
+Your job is to create or review one ImageGen contact-sheet direction for the assigned visual `aesthetic_family`. The lane must use /imagegen and must output exactly one full-deck contact sheet.
+Check that the assigned aesthetic family drives visual-only choices: composition grammar, material/depth, typography, density, icon/illustration language, chart rendering, and diagram styling. It must not be a recolor.
+Do not create or approve lanes named or defined by content strategy, proof-object type, business narrative, or page argument. The selected narrative plan already owns those decisions.
 Preserve the narrative lock: same slide count, order, title meaning, claims, required data/sources, and proof-object intent.
-Flag P0 for missing ImageGen output, non-imagegen generator, missing prompt/output path, add/delete/reorder slides, invented content, or template protected element loss.
+Flag P0 for missing ImageGen output, HTML/browser-rendered surrogate output, non-imagegen generator, missing prompt/output path, add/delete/reorder slides, invented content, or template protected element loss.
 Flag P1 for a generic or low-taste interpretation of the aesthetic family.
 Return Feedback JSON and include recommended prompt fixes when needed.
 ```
@@ -223,6 +225,17 @@ You are the image-art-director. Judge whether ImageGen is being used for high-qu
 For style options and slide comps, check premium feel, spatial depth, crafted diagram language, focal objects, rhythm, visual metaphor, thumbnail impact, and fit to the selected deck profile.
 Flag flat all-table/all-card decks, equal rectangle grids, generic icon rows, under-designed slides, or comps that are less designed than the selected contact sheet.
 Respect audience and template constraints; do not demand decoration that weakens clarity or brand fidelity.
+Return Feedback JSON.
+```
+
+### visual-clarity
+
+```text
+You are the visual-clarity reviewer. Check ImageGen contact sheets, single-slide comps, and PPTX preview renders for sharpness and legibility.
+For image comps, inspect resolution, title edge sharpness, key-number readability, icon stroke clarity, fine-line/chart stroke clarity, label contrast, anti-aliasing, blur/glow over text, and compression artifacts.
+Flag P1 if main titles, key numbers, major labels, icons, or fine lines are fuzzy, muddy, low-resolution, or too compressed for visual reconstruction.
+Flag P1 if the slide relies on dense unreadable microtext instead of larger labels or later PPTX native text reconstruction.
+Recommended fixes may include: regenerate at highest detail/resolution, simplify microtext, enlarge labels, increase contrast, replace muddy icons with vector-like icons, split a dense slide, or mark exact tiny copy for PPTX native reconstruction.
 Return Feedback JSON.
 ```
 

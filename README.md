@@ -24,7 +24,7 @@ It can also run in `reconstruction-only` mode when you already have final per-sl
 6. Generate materially different ImageGen contact-sheet directions.
 7. Let the user choose one style direction unless full automation was explicitly requested.
 8. Generate one independent ImageGen comp for every slide.
-9. Review and iterate slide comps before PPTX work.
+9. Review and iterate slide comps before PPTX work, including a visual-clarity gate for resolution, sharp text, icons, fine lines, and compression artifacts.
 10. Reconstruct approved comps as editable PowerPoint slides.
 11. Run final council review before export.
 
@@ -103,9 +103,16 @@ python imagegen-pptx-pipeline/scripts/check_pipeline_gates.py \
   --stage slide-intent-lock
 ```
 
-## Sync To Local Codex
+## Local Codex Sync
 
-Treat this repository as the source of truth. After editing the skill here, sync the installable skill directory to local Codex:
+Treat this repository as the source of truth. For local development, prefer a symlink so edits in this repo are immediately visible to Codex:
+
+```bash
+mkdir -p ~/.codex/skills
+ln -sfn "$PWD/imagegen-pptx-pipeline" ~/.codex/skills/imagegen-pptx-pipeline
+```
+
+For runtimes that do not support symlinked skills, copy/sync instead:
 
 ```bash
 tools/sync-to-codex.sh --dry-run
@@ -126,8 +133,12 @@ tools/sync-to-codex.sh --codex-home /path/to/.codex
 - Final text and numbers come from `deck_spec.json`.
 - User-supplied templates are hard constraints.
 - Style options must differ by visual system, not just color.
-- PPTX reconstruction defaults to pixel-locked hybrid fidelity: approved comps may be used as full-slide or sliced visual backplates, with editable text/numbers/simple shapes overlaid.
+- ImageGen prompts request the highest available clarity/detail by default. Single-slide comps target a 4K-like 3840x2160 canvas when supported, and must pass `clarity_review` before PPTX reconstruction.
+- Blurry titles, unreadable key numbers, muddy icons, soft fine lines, low-resolution comps, or compression artifacts are P1 blockers unless the user explicitly accepts the risk.
+- PPTX reconstruction defaults to pixel-locked hybrid fidelity: approved comps may be used as full-slide or sliced visual backplates, with visible editable text/numbers/simple shapes overlaid after masking source-image text regions.
 - The workflow does not promise that every complex visual becomes native editable PPT geometry; it preserves complex visuals as image layers when that is required for visual fidelity.
+- Hidden text boxes, speaker notes, off-canvas text, transparent text, or text placed behind a full-slide image do not count as editable reconstruction.
+- For image-to-editable-slide work, use `native_trace_hybrid` when visible editability matters more than exact pixel identity: the source image becomes a coordinate reference, while major cards, text, arrows, icons, charts, and connectors are rebuilt as native PPT elements and verified by render/fix loops.
 - PPTX reconstruction must not downgrade rich comps into generic tables or card grids.
 - Reconstruction-only uses page-sharded modules: `slide-modules/slide-XXX.pptx` is reviewed before merging into the final deck.
 - Every user pause is stateful through `pipeline_state.json`.

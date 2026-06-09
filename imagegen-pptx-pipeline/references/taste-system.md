@@ -89,30 +89,31 @@ When generating multiple directions, each option must differ by more than color:
 
 - aesthetic family
 - composition grammar
-- proof-object family
+- visual skin and material language
 - density and pacing
 - title/section treatment
 - background and depth treatment
 - chart/diagram language
 - material and texture treatment
 
-Examples of genuinely different options:
+Examples of genuinely different visual options:
 
-- Template-faithful executive evidence: restrained, formal, strong source hierarchy.
-- Technical architecture system: layered maps, pipelines, control loops, dense but organized.
-- Narrative growth arc: larger focal graphics, maturity curves, story rhythm, warmer pacing.
-- Data-story dashboard: scorecards, bridges, deltas, and decision summaries.
-- Premium editorial: stronger visual moments, asymmetry, refined image/diagram interplay.
+- Premium-flat: restrained flat editorial/business visual skin, exact spacing, crisp rules, and no default-card feel.
+- Glassmorphism-blur: translucent layered panels, frosted depth, fine highlights, and high-contrast readable text.
+- Skeuomorphic-material: tactile paper/metal/glass surfaces, object-like panels, and subtle dimensionality.
+- Technical-schematic: schematic drafting language, measured connectors, grids, and instrument-like annotations.
+- Animated-illustration: polished static illustration/animation-frame language with simplified but business-readable forms.
+- Luxury-print: high-end annual-report print language, premium paper texture, refined typography, and deliberate hierarchy.
 
 Near-identical options are a P1 failure even if they look polished.
 
 ## Aesthetic Family Taxonomy
 
-`aesthetic_family` is not a decoration label. It must drive composition grammar, proof-object treatment, material/depth, typography, density, and known failure modes while preserving the same deck story.
+`aesthetic_family` is not a decoration label. It must drive visual-only choices: composition grammar, material/depth, typography, density, icon/illustration language, chart rendering, and known failure modes while preserving the same deck story, slide content, and proof object.
 
 ### premium-flat
 
-Use refined flat hierarchy, custom diagrams, strong typography, exact spacing, and clean executive evidence modules. This is not default PPT flatness.
+Use refined flat hierarchy, custom diagram rendering, strong typography, exact spacing, and clean executive modules. This is not default PPT flatness.
 
 Forbid: default cards, table-only layouts, generic icon rows, bland white boxes, and low-effort consulting templates.
 
@@ -124,7 +125,7 @@ Forbid: web animation instructions as PPT requirements, noisy arrows everywhere,
 
 ### skeuomorphic-material
 
-Use tactile evidence modules, subtle dimensionality, physical controls, object-like panels, soft shadows, paper/metal/glass surfaces, and carefully modeled proof objects.
+Use tactile material modules, subtle dimensionality, physical controls, object-like panels, soft shadows, and paper/metal/glass surfaces.
 
 Forbid: cartoonish fake hardware, heavy drop shadows, plastic toy UI, uncontrolled 3D, and decorative objects unrelated to the claim.
 
@@ -134,11 +135,11 @@ Use restrained translucency, blurred backplates, layered depth, frosted panels, 
 
 Forbid: low-legibility glow, blurry text, overused blue-purple panels, bokeh decoration, and weak contrast.
 
-### tech-systems
+### technical-schematic
 
-Use architecture maps, data lineage, control planes, nodes/edges, pipelines, telemetry, system stacks, and disciplined luminous accents.
+Use schematic drafting language, precise grids, measured connectors, instrument-like annotations, thin blue-gray construction lines, and disciplined luminous accents. This is a visual skin only; it must not change the locked proof object or story.
 
-Forbid: cyberpunk/neon decoration, fake code, meaningless circuit lines, and technical visuals that obscure source proof.
+Forbid: cyberpunk/neon decoration, fake code, meaningless circuit lines, and technical visuals that obscure or rewrite locked content.
 
 ### editorial-literary
 
@@ -146,11 +147,17 @@ Use publication-like typography, narrative pacing, elegant whitespace, essay rhy
 
 Forbid: magazine prettiness that weakens proof, oversized decorative type in dense business slides, and vague poetic copy.
 
-### data-command-center
+### luxury-print
 
-Use executive dashboards, scorecards, deltas, bridges, operational maps, and high-density but organized control surfaces.
+Use high-end annual-report print language: crisp rules, refined typography, premium paper-like texture, restrained color accents, and deliberate hierarchy.
 
-Forbid: illegible microtext, metric wallpaper, unsupported numbers, and visual density without decision hierarchy.
+Forbid: illegible microtext, decorative print effects that weaken proof, unsupported numbers, and visual density without reader hierarchy.
+
+### animated-illustration
+
+Use polished static illustration language: simplified forms, expressive but controlled figures/objects, motion-frame composition, and vivid accents that remain business-readable.
+
+Forbid: childish cartoons, fake people, mascot-heavy pages, motion instructions, and story changes masquerading as illustration.
 
 ### brand-world
 
@@ -165,6 +172,8 @@ Prompts should ask for the slide's visual archetype, not only its topic. Name th
 For contact sheets, require distinct direction premises and thumbnail-level recognizability.
 
 For single-slide comps, preserve the selected contact sheet's visual system and make the chosen archetype obvious. Do not let the slide become a wireframe or a plain data table unless that is the intentional proof object.
+
+Always request the highest available image detail and a crisp presentation-render look: sharp title edges, clean vector-like icons, clear chart strokes, readable key numbers, high-contrast labels, and no blur/compression artifacts. Do not apply glass blur, glow, depth of field, motion blur, or heavy texture over text, icons, line charts, axes, or small labels.
 
 If a template exists, the prompt must explicitly include the mapped source slide screenshot and protected template elements. Explore inside allowed zones only.
 

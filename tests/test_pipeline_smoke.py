@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import subprocess
+import struct
 import sys
 import tempfile
 import unittest
@@ -26,6 +27,52 @@ def load_gate_module():
 def run_json(args: list[str], *, check: bool = True) -> dict:
     completed = subprocess.run(args, check=check, text=True, capture_output=True)
     return json.loads(completed.stdout)
+
+
+def quality_policy() -> dict:
+    return {
+        "policy_id": "imagegen-max-clarity-v1",
+        "enabled": True,
+        "prompt_detail_level": "highest_available",
+        "requested_single_slide_canvas_px": {"width": 3840, "height": 2160},
+        "minimum_acceptable_comp_px": {"width": 1920, "height": 1080},
+        "minimum_acceptable_contact_sheet_px": {"width": 2400, "height": 1350},
+        "prompt_requires_crisp_text_and_icons": True,
+        "review_required_before_pptx": True,
+        "small_text_policy": "Keep text and icons sharp; exact final small text is rebuilt from deck_spec.",
+        "blur_rejection_criteria": ["blurry title", "muddy icons", "soft fine lines"],
+    }
+
+
+def clarity_review() -> dict:
+    return {
+        "status": "approved",
+        "image_dimensions_px": {"width": 1920, "height": 1080},
+        "text_legibility": "approved",
+        "icon_line_clarity": "approved",
+        "edge_sharpness": "approved",
+        "blocking_blur": False,
+        "small_text_strategy": "Small text is either readable in the comp or rebuilt exactly during PPTX reconstruction.",
+    }
+
+
+def fake_png(width: int = 1920, height: int = 1080) -> bytes:
+    return (
+        b"\x89PNG\r\n\x1a\n"
+        + b"\x00\x00\x00\rIHDR"
+        + struct.pack(">II", width, height)
+        + b"\x08\x02\x00\x00\x00"
+        + b"\x00\x00\x00\x00"
+    )
+
+
+def taste_guidance() -> dict:
+    return {
+        "enabled": True,
+        "sources": [
+            {"name": "built-in-ppt-taste-system", "path": "references/taste-system.md"}
+        ],
+    }
 
 
 class PipelineSmokeTests(unittest.TestCase):
@@ -217,9 +264,9 @@ class PipelineSmokeTests(unittest.TestCase):
             (workspace / "slides").mkdir()
             (workspace / "styles").mkdir()
             comp = workspace / "slides" / "slide-001-comp.png"
-            comp.write_bytes(b"fake image bytes")
+            comp.write_bytes(fake_png())
             contact = workspace / "styles" / "option-a-contact-sheet.png"
-            contact.write_bytes(b"fake image bytes")
+            contact.write_bytes(fake_png(2400, 1350))
             deck_spec = {
                 "deck": {"slide_count": 1},
                 "slides": [{"slide_id": "slide-001"}],
@@ -230,10 +277,12 @@ class PipelineSmokeTests(unittest.TestCase):
                 "per_slide_comps_complete": True,
                 "default_reconstruction_mode": "pixel_locked_hybrid",
                 "pixel_locked_hybrid_required": True,
+                "image_quality_policy": quality_policy(),
                 "slides": [
                     {
                         "slide_id": "slide-001",
                         "comp_path": "slides/slide-001-comp.png",
+                        "image_source_type": "imagegen",
                         "visual_archetype": "system map",
                         "reconstruction_mode": "pixel_locked_hybrid",
                     }
@@ -244,9 +293,11 @@ class PipelineSmokeTests(unittest.TestCase):
             self.assertTrue(any("comp_backplate.strategy" in item for item in failures))
             self.assertTrue(any("text_mask_plan" in item for item in failures))
             self.assertTrue(any("editable_overlay_plan" in item for item in failures))
+            self.assertTrue(any("clarity_review" in item for item in failures))
 
             visual_contract["slides"][0].update(
                 {
+                    "clarity_review": clarity_review(),
                     "comp_backplate": {
                         "strategy": "full_slide",
                         "path": "slides/slide-001-comp.png",
@@ -256,12 +307,233 @@ class PipelineSmokeTests(unittest.TestCase):
                     "text_mask_plan": [
                         {"region": "title", "method": "shape mask", "reason": "editable title overlay"}
                     ],
-                    "editable_overlay_plan": ["editable title", "editable key number"],
+                    "editable_overlay_plan": {
+                        "visible_native_text_overlay": True,
+                        "visible_overlay_count": 2,
+                        "regions": ["editable title", "editable key number"],
+                    },
                 }
             )
             failures = []
             gate_module.check_visual_contract(workspace, deck_spec, visual_contract, failures)
             self.assertEqual(failures, [])
+
+    def test_visual_contract_rejects_blurry_comps(self) -> None:
+        gate_module = load_gate_module()
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp)
+            (workspace / "slides").mkdir()
+            (workspace / "styles").mkdir()
+            (workspace / "slides" / "slide-001-comp.png").write_bytes(fake_png())
+            (workspace / "styles" / "option-a-contact-sheet.png").write_bytes(fake_png(2400, 1350))
+            deck_spec = {
+                "deck": {"slide_count": 1},
+                "slides": [{"slide_id": "slide-001"}],
+            }
+            bad_clarity = clarity_review()
+            bad_clarity.update(
+                {
+                    "status": "needs_iteration",
+                    "image_dimensions_px": {"width": 1024, "height": 576},
+                    "text_legibility": "failed",
+                    "icon_line_clarity": "failed",
+                    "blocking_blur": True,
+                }
+            )
+            visual_contract = {
+                "selected_style": "Option A",
+                "contact_sheet": "styles/option-a-contact-sheet.png",
+                "per_slide_comps_complete": True,
+                "default_reconstruction_mode": "pixel_locked_hybrid",
+                "pixel_locked_hybrid_required": True,
+                "image_quality_policy": quality_policy(),
+                "slides": [
+                    {
+                        "slide_id": "slide-001",
+                        "comp_path": "slides/slide-001-comp.png",
+                        "image_source_type": "imagegen",
+                        "visual_archetype": "system map",
+                        "reconstruction_mode": "pixel_locked_hybrid",
+                        "clarity_review": bad_clarity,
+                        "comp_backplate": {
+                            "strategy": "full_slide",
+                            "path": "slides/slide-001-comp.png",
+                            "insert_first": True,
+                        },
+                        "text_mask_plan": [
+                            {"region": "title", "method": "shape mask", "reason": "editable title overlay"}
+                        ],
+                        "editable_overlay_plan": {
+                            "visible_native_text_overlay": True,
+                            "visible_overlay_count": 2,
+                        },
+                    }
+                ],
+            }
+            failures: list[str] = []
+            gate_module.check_visual_contract(workspace, deck_spec, visual_contract, failures)
+            self.assertTrue(any("clarity_review.status" in item for item in failures))
+            self.assertTrue(any("blocking_blur" in item for item in failures))
+            self.assertTrue(any("image_dimensions_px" in item for item in failures))
+
+    def test_visual_contract_rejects_html_blueprint_surrogate(self) -> None:
+        gate_module = load_gate_module()
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp)
+            (workspace / "slides").mkdir()
+            (workspace / "styles").mkdir()
+            (workspace / "slides" / "slide-001-comp.png").write_bytes(fake_png())
+            (workspace / "slides" / "slide-001.html").write_text("<html></html>", encoding="utf-8")
+            (workspace / "styles" / "option-a-contact-sheet.png").write_bytes(fake_png(2400, 1350))
+            deck_spec = {
+                "deck": {"slide_count": 1},
+                "slides": [{"slide_id": "slide-001"}],
+            }
+            visual_contract = {
+                "selected_style": "Option A",
+                "contact_sheet": "styles/option-a-contact-sheet.png",
+                "per_slide_comps_complete": True,
+                "default_reconstruction_mode": "pixel_locked_hybrid",
+                "pixel_locked_hybrid_required": True,
+                "image_quality_policy": quality_policy(),
+                "slides": [
+                    {
+                        "slide_id": "slide-001",
+                        "comp_path": "slides/slide-001-comp.png",
+                        "image_source_type": "imagegen",
+                        "visual_archetype": "system map",
+                        "reconstruction_mode": "pixel_locked_hybrid",
+                        "clarity_review": clarity_review(),
+                        "comp_backplate": {
+                            "strategy": "full_slide",
+                            "path": "slides/slide-001-comp.png",
+                            "insert_first": True,
+                        },
+                        "text_mask_plan": [
+                            {"region": "title", "method": "shape mask", "reason": "editable title overlay"}
+                        ],
+                        "editable_overlay_plan": {
+                            "visible_native_text_overlay": True,
+                            "visible_overlay_count": 2,
+                        },
+                    }
+                ],
+            }
+            failures: list[str] = []
+            gate_module.check_visual_contract(workspace, deck_spec, visual_contract, failures)
+            self.assertTrue(any("HTML/CSS/browser surrogate" in item for item in failures))
+            self.assertTrue(any("HTML/browser blueprint" in item for item in failures))
+
+    def test_style_gate_rejects_content_strategy_as_visual_style(self) -> None:
+        gate_module = load_gate_module()
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp)
+            (workspace / "styles" / "prompts").mkdir(parents=True)
+            (workspace / "styles" / "prompts" / "option-A.txt").write_text("prompt", encoding="utf-8")
+            (workspace / "styles" / "option-A-contact-sheet.png").write_bytes(fake_png(2400, 1350))
+            deck_spec = {
+                "deck": {"deck_profile": "internal-review", "slide_count": 1},
+                "slides": [
+                    {
+                        "slide_id": "slide-001",
+                        "title": "Title",
+                        "claim": "Claim",
+                        "proof_object": "loop",
+                    }
+                ],
+            }
+            fingerprint = gate_module.deck_spec_fingerprint(deck_spec)
+            slide_intent_plan = {"lock_state": "locked"}
+            narrative_plan = {"selected_narrative_id": "narrative-a"}
+            design_system = {"taste_guidance": taste_guidance()}
+            invariance = {
+                "slide_count_ok": True,
+                "order_ok": True,
+                "claims_preserved": True,
+                "data_sources_preserved": True,
+                "proof_object_intent_preserved": True,
+                "selected_narrative_preserved": True,
+                "violations": [],
+            }
+            style_brief = {
+                "direction_count": 1,
+                "user_requested_count": 1,
+                "selection_mode": "ask_user",
+                "generation_mode": "parallel_style_lanes",
+                "deck_profile": "internal-review",
+                "style_variation_scope": "visual_aesthetic_only",
+                "content_strategy_locked": True,
+                "taste_guidance": taste_guidance(),
+                "image_quality_policy": quality_policy(),
+                "selected_option": "A",
+                "selected_narrative_id": "narrative-a",
+                "narrative_lock": {
+                    "deck_spec_fingerprint": fingerprint,
+                    "locked_slide_count": 1,
+                    "locked_slide_order": ["slide-001"],
+                    "slide_intent_plan": "slide_intent_plan.json",
+                    "slide_intent_lock_state": "locked",
+                    "narrative_plan": "narrative_plan.json",
+                    "narrative_plan_lock_state": "locked",
+                    "slide_order_locked": True,
+                    "section_flow_locked": True,
+                    "titles_locked": True,
+                    "claims_locked": True,
+                    "required_data_locked": True,
+                    "core_proof_objects_locked": True,
+                },
+                "candidate_directions": [
+                    {
+                        "option_id": "A",
+                        "style_lane_id": "risk-system-map",
+                        "aesthetic_family": "data-command-center",
+                        "name": "经营驾驶舱",
+                        "premise": "以风险系统图重写页面表达",
+                        "style_variation_scope": "visual_aesthetic_only",
+                        "narrative_behavior": "same_story_reexpressed",
+                    }
+                ],
+                "style_lanes": [
+                    {
+                        "option_id": "A",
+                        "style_lane_id": "risk-system-map",
+                        "aesthetic_family": "data-command-center",
+                        "name": "经营驾驶舱",
+                        "generator": "imagegen",
+                        "status": "selected",
+                        "prompt_path": "styles/prompts/option-A.txt",
+                        "output_path": "styles/option-A-contact-sheet.png",
+                        "narrative_lock_ref": fingerprint,
+                        "invariance_check": invariance,
+                    }
+                ],
+                "style_contact_sheets": [
+                    {
+                        "option_id": "A",
+                        "style_lane_id": "risk-system-map",
+                        "aesthetic_family": "data-command-center",
+                        "name": "经营驾驶舱",
+                        "style_variation_scope": "visual_aesthetic_only",
+                        "generator": "imagegen",
+                        "path": "styles/option-A-contact-sheet.png",
+                        "prompt_path": "styles/prompts/option-A.txt",
+                        "narrative_lock_ref": fingerprint,
+                        "invariance_check": invariance,
+                    }
+                ],
+            }
+            failures: list[str] = []
+            gate_module.check_style_gate(
+                workspace,
+                deck_spec,
+                slide_intent_plan,
+                narrative_plan,
+                design_system,
+                style_brief,
+                failures,
+            )
+            self.assertTrue(any("content/narrative term" in item for item in failures))
+            self.assertTrue(any("style label" in item for item in failures))
 
     def test_reconstruction_only_before_pptx_skips_full_pipeline_gates(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -280,7 +552,7 @@ class PipelineSmokeTests(unittest.TestCase):
                 ]
             )
             workspace = Path(result["workspace"])
-            (workspace / "slides" / "slide-001-comp.png").write_bytes(b"fake image bytes")
+            (workspace / "slides" / "slide-001-comp.png").write_bytes(fake_png())
 
             pipeline_state = json.loads((workspace / "pipeline_state.json").read_text(encoding="utf-8"))
             pipeline_state["current_stage"] = "visual_contract"
@@ -317,6 +589,10 @@ class PipelineSmokeTests(unittest.TestCase):
                             "text_source_path": "",
                             "reconstruction_mode": "pixel_locked_hybrid",
                             "required_editable_overlays": ["title"],
+                            "editable_overlay_coverage": {
+                                "visible_native_text_overlay": True,
+                                "visible_overlay_count": 1,
+                            },
                             "output_slide_pptx": "slide-modules/slide-001.pptx",
                             "preview_path": "preview/slide-001-pptx.png",
                             "review_status": "not_started",
@@ -334,12 +610,14 @@ class PipelineSmokeTests(unittest.TestCase):
                 {
                     "selected_style": "user-supplied-final-images",
                     "per_slide_comps_complete": True,
+                    "image_quality_policy": quality_policy(),
                     "slides": [
                         {
                             "slide_id": "slide-001",
                             "comp_path": "slides/slide-001-comp.png",
                             "visual_archetype": "source image",
                             "reconstruction_mode": "pixel_locked_hybrid",
+                            "clarity_review": clarity_review(),
                             "comp_backplate": {
                                 "strategy": "full_slide",
                                 "path": "slides/slide-001-comp.png",
@@ -349,7 +627,11 @@ class PipelineSmokeTests(unittest.TestCase):
                             "text_mask_plan": [
                                 {"region": "title", "method": "shape mask", "reason": "editable overlay"}
                             ],
-                            "editable_overlay_plan": ["editable title"],
+                            "editable_overlay_plan": {
+                                "visible_native_text_overlay": True,
+                                "visible_overlay_count": 1,
+                                "regions": ["editable title"],
+                            },
                         }
                     ],
                 }
