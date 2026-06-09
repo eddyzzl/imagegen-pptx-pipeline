@@ -71,6 +71,14 @@ def stage_names(pipeline_state: dict) -> set[str]:
     }
 
 
+def workflow_mode(pipeline_state: dict, deck_spec: dict) -> str:
+    return deck_spec.get("deck", {}).get("mode") or pipeline_state.get("mode") or ""
+
+
+def is_reconstruction_mode(mode: str) -> bool:
+    return mode in {"reconstruction-only", "repair-existing-pptx"}
+
+
 def deck_spec_fingerprint(deck_spec: dict) -> str:
     """Stable fingerprint of content fields style lanes may not mutate."""
     deck = deck_spec.get("deck", {})
@@ -450,14 +458,86 @@ def check_style_gate(
         failures.append(f"style_brief.json selected_option {selected_option!r} is not in style_contact_sheets")
 
 
+def check_reconstruction_manifest(
+    workspace: Path,
+    deck_spec: dict,
+    reconstruction_manifest: dict,
+    failures: list[str],
+    *,
+    require_outputs: bool = False,
+) -> None:
+    mode = deck_spec.get("deck", {}).get("mode") or reconstruction_manifest.get("mode")
+    if not is_reconstruction_mode(mode):
+        failures.append("reconstruction_manifest.json is only valid for reconstruction-only or repair-existing-pptx mode")
+    if deck_spec.get("deck", {}).get("lock_state") != "locked":
+        failures.append("deck_spec.json deck.lock_state must be locked for reconstruction-only PPTX work")
+    if reconstruction_manifest.get("lock_state") != "locked":
+        failures.append("reconstruction_manifest.json lock_state must be locked before PPTX reconstruction")
+    page_sharding = reconstruction_manifest.get("page_sharding", {})
+    for key in ("enabled", "per_slide_pptx_required", "merge_after_page_approval"):
+        if page_sharding.get(key) is not True:
+            failures.append(f"reconstruction_manifest.json page_sharding.{key} must be true")
+    global_rules = reconstruction_manifest.get("global_rules", {})
+    if global_rules.get("ordinary_table_or_card_rebuild_forbidden") is not True:
+        failures.append("reconstruction_manifest.json must forbid ordinary table/card rebuilds")
+    if global_rules.get("native_text_boxes_allowed_only_as_transparent_overlays") is not True:
+        failures.append("reconstruction_manifest.json must restrict native text boxes to transparent overlays")
+    expected_count = deck_spec.get("deck", {}).get("slide_count") or len(deck_spec.get("slides", []))
+    slides = reconstruction_manifest.get("slides", [])
+    if expected_count and len(slides) != expected_count:
+        failures.append(
+            f"reconstruction_manifest.json has {len(slides)} slides but deck_spec expects {expected_count}"
+        )
+    if reconstruction_manifest.get("open_questions"):
+        failures.append("reconstruction_manifest.json still has open_questions")
+    allowed_text_status = {"provided", "ocr_verified", "user_accepted_image_text", "image_only_accepted"}
+    for idx, slide in enumerate(slides, 1):
+        if not isinstance(slide, dict):
+            failures.append(f"reconstruction manifest slide {idx:03d} must be an object")
+            continue
+        if not slide.get("slide_id"):
+            failures.append(f"reconstruction manifest slide {idx:03d} missing slide_id")
+        source_image = slide.get("source_image_path")
+        path = require_file(workspace, source_image, f"reconstruction slide {idx:03d} source image", failures)
+        if path and (f"{os.sep}output{os.sep}" in str(path) or f"{os.sep}preview{os.sep}" in str(path)):
+            failures.append(f"reconstruction slide {idx:03d} source image cannot be a PPTX preview/output image: {path}")
+        if slide.get("text_source_status") not in allowed_text_status:
+            failures.append(
+                f"reconstruction slide {idx:03d} text_source_status must be one of {sorted(allowed_text_status)}"
+            )
+        if slide.get("reconstruction_mode") not in {"pixel_locked_hybrid", "sliced_hybrid"}:
+            failures.append(
+                f"reconstruction slide {idx:03d} reconstruction_mode must be pixel_locked_hybrid or sliced_hybrid"
+            )
+        if not slide.get("required_editable_overlays"):
+            failures.append(f"reconstruction slide {idx:03d} missing required_editable_overlays")
+        output_slide = slide.get("output_slide_pptx")
+        preview = slide.get("preview_path")
+        if not output_slide:
+            failures.append(f"reconstruction slide {idx:03d} missing output_slide_pptx")
+        if not preview:
+            failures.append(f"reconstruction slide {idx:03d} missing preview_path")
+        if require_outputs:
+            if output_slide:
+                require_file(workspace, output_slide, f"reconstruction slide {idx:03d} output PPTX", failures)
+            if preview:
+                require_file(workspace, preview, f"reconstruction slide {idx:03d} preview", failures)
+            if slide.get("review_status") not in {"approved", "user_accepted_risk"}:
+                failures.append(
+                    f"reconstruction slide {idx:03d} review_status must be approved or user_accepted_risk"
+                )
+
+
 def check_visual_contract(workspace: Path, deck_spec: dict, visual_contract: dict, failures: list[str]) -> None:
     expected_count = deck_spec.get("deck", {}).get("slide_count") or len(deck_spec.get("slides", []))
     slides = visual_contract.get("slides", [])
+    reconstruction_mode = is_reconstruction_mode(deck_spec.get("deck", {}).get("mode", ""))
     if not visual_contract.get("selected_style"):
         failures.append("visual_contract.json selected_style is empty")
-    if not visual_contract.get("contact_sheet"):
+    contact_sheet = visual_contract.get("contact_sheet")
+    if not contact_sheet and not reconstruction_mode:
         failures.append("visual_contract.json contact_sheet is empty")
-    elif require_file(workspace, visual_contract.get("contact_sheet"), "selected style contact sheet", failures):
+    elif contact_sheet and require_file(workspace, contact_sheet, "selected style contact sheet", failures):
         pass
     if visual_contract.get("per_slide_comps_complete") is not True:
         failures.append("visual_contract.json per_slide_comps_complete must be true before PPTX build")
@@ -561,7 +641,15 @@ def main() -> int:
     parser.add_argument("--workspace", required=True)
     parser.add_argument(
         "--stage",
-        choices=["content-lock", "slide-intent-lock", "narrative-lock", "style-selection", "before-pptx", "final"],
+        choices=[
+            "content-lock",
+            "slide-intent-lock",
+            "narrative-lock",
+            "style-selection",
+            "reconstruction-lock",
+            "before-pptx",
+            "final",
+        ],
         required=True,
     )
     args = parser.parse_args()
@@ -573,38 +661,65 @@ def main() -> int:
 
     pipeline_state = load_json(workspace / "pipeline_state.json", failures)
     deck_spec = load_json(workspace / "deck_spec.json", failures)
+    mode = workflow_mode(pipeline_state, deck_spec)
+    reconstruction_mode = is_reconstruction_mode(mode)
     slide_intent_plan = load_json(workspace / "slide_intent_plan.json", failures)
     narrative_plan = load_json(workspace / "narrative_plan.json", failures)
     design_system = load_json(workspace / "design_system.json", failures)
     style_brief = load_json(workspace / "style_brief.json", failures)
     visual_contract = load_json(workspace / "visual_contract.json", failures)
+    reconstruction_manifest = (
+        load_json(workspace / "reconstruction_manifest.json", failures)
+        if reconstruction_mode or (workspace / "reconstruction_manifest.json").exists()
+        else {}
+    )
 
     if pipeline_state.get("skill") != "imagegen-pptx-pipeline":
         failures.append("pipeline_state.json does not identify imagegen-pptx-pipeline")
     if args.stage in {"before-pptx", "final"} and pipeline_state.get("current_stage") == "initialized":
         failures.append("pipeline_state.json is still at initialized; stage transitions were not recorded")
 
-    check_content_lock(deck_spec, failures)
-    if args.stage in {"slide-intent-lock", "narrative-lock", "style-selection", "before-pptx", "final"}:
-        check_slide_intent_lock(workspace, deck_spec, slide_intent_plan, failures)
-    if args.stage in {"narrative-lock", "style-selection", "before-pptx", "final"}:
-        check_narrative_lock(workspace, deck_spec, slide_intent_plan, narrative_plan, failures)
-    if args.stage in {"style-selection", "before-pptx", "final"}:
-        check_style_gate(workspace, deck_spec, slide_intent_plan, narrative_plan, design_system, style_brief, failures)
-    if args.stage in {"before-pptx", "final"}:
-        check_visual_contract(workspace, deck_spec, visual_contract, failures)
-        check_reviews(workspace, deck_spec, failures)
-        required_stages = {
-            "content_gate",
-            "slide_intent_lock",
-            "narrative_selection",
-            "style_selection",
-            "single_slide_comps",
-            "slide_comp_review",
-        }
-        missing = required_stages - stage_names(pipeline_state)
-        if missing:
-            failures.append("pipeline_state.json stage_history missing: " + ", ".join(sorted(missing)))
+    if reconstruction_mode:
+        if args.stage in {"content-lock", "slide-intent-lock", "narrative-lock", "style-selection"}:
+            failures.append(f"{args.stage} is not used in {mode} mode; use reconstruction-lock or before-pptx")
+        if args.stage in {"reconstruction-lock", "before-pptx", "final"}:
+            check_reconstruction_manifest(
+                workspace,
+                deck_spec,
+                reconstruction_manifest,
+                failures,
+                require_outputs=args.stage == "final",
+            )
+        if args.stage in {"before-pptx", "final"}:
+            check_visual_contract(workspace, deck_spec, visual_contract, failures)
+            required_stages = {"reconstruction_input_lock", "visual_contract"}
+            if args.stage == "final":
+                required_stages.add("page_reconstruction")
+            missing = required_stages - stage_names(pipeline_state)
+            if missing:
+                failures.append("pipeline_state.json stage_history missing: " + ", ".join(sorted(missing)))
+    else:
+        check_content_lock(deck_spec, failures)
+        if args.stage in {"slide-intent-lock", "narrative-lock", "style-selection", "before-pptx", "final"}:
+            check_slide_intent_lock(workspace, deck_spec, slide_intent_plan, failures)
+        if args.stage in {"narrative-lock", "style-selection", "before-pptx", "final"}:
+            check_narrative_lock(workspace, deck_spec, slide_intent_plan, narrative_plan, failures)
+        if args.stage in {"style-selection", "before-pptx", "final"}:
+            check_style_gate(workspace, deck_spec, slide_intent_plan, narrative_plan, design_system, style_brief, failures)
+        if args.stage in {"before-pptx", "final"}:
+            check_visual_contract(workspace, deck_spec, visual_contract, failures)
+            check_reviews(workspace, deck_spec, failures)
+            required_stages = {
+                "content_gate",
+                "slide_intent_lock",
+                "narrative_selection",
+                "style_selection",
+                "single_slide_comps",
+                "slide_comp_review",
+            }
+            missing = required_stages - stage_names(pipeline_state)
+            if missing:
+                failures.append("pipeline_state.json stage_history missing: " + ", ".join(sorted(missing)))
     if args.stage == "final":
         check_final(workspace, failures)
 

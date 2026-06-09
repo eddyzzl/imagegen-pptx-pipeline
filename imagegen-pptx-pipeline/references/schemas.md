@@ -11,8 +11,8 @@ Write this before every user-facing pause and update it at every stage transitio
   "skill": "imagegen-pptx-pipeline",
   "workspace": "/absolute/path/to/workspace",
   "title": "Deck title",
-  "mode": "create | template-following | targeted-edit",
-  "current_stage": "initialized | input_reading | content_gate | slide_intent_lock | narrative_selection | style_count | style_selection | single_slide_comps | slide_comp_review | visual_contract | pptx_reconstruction | final_review | complete",
+  "mode": "create | template-following | targeted-edit | reconstruction-only | repair-existing-pptx",
+  "current_stage": "initialized | input_reading | reconstruction_input_lock | content_gate | slide_intent_lock | narrative_selection | style_count | style_selection | single_slide_comps | slide_comp_review | visual_contract | page_reconstruction | pptx_reconstruction | final_review | complete",
   "awaiting_user": false,
   "required_user_reply": "",
   "next_action": "",
@@ -57,7 +57,7 @@ Rules:
     "content_input_type": "explicit_per_page | brief_outline | template_only | reference_only | mixed",
     "language": "zh-CN",
     "aspect_ratio": "16:9",
-    "mode": "create | template-following | targeted-edit",
+    "mode": "create | template-following | targeted-edit | reconstruction-only | repair-existing-pptx",
     "slide_count": 0,
     "lock_state": "draft | needs_user_confirmation | locked"
   },
@@ -746,12 +746,66 @@ Rules:
 - Each slide must have `reconstruction_mode`, `comp_backplate`, `text_mask_plan`, and `editable_overlay_plan` before PPTX authoring.
 - `pixel_locked_hybrid` and `sliced_hybrid` slides must insert the approved comp or cropped comp layers before native overlays.
 - A whole-slide comp backplate is allowed. A final slide that is only a flat image with no editable main information is not allowed unless the user explicitly requested non-editable output.
+- In `reconstruction-only` and `repair-existing-pptx` modes, `contact_sheet` is optional and `selected_style` should be `user-supplied-final-images` or `repaired-from-source-images`.
 - A final PPTX slide must keep the slide's `visual_archetype` unless `deviation_notes` explains a source/template/editability blocker.
 - If `template_mode` is `hard`, every slide must preserve its mapped source slide's protected elements unless `deviation_notes` and `deviation-log.md` document explicit user acceptance.
 - If `per_slide_comps_complete` is false, PPTX authoring is blocked.
 - Approved comp paths must point to independently generated slide comp images, normally under `slides/slide-XXX-comp.png`. Paths under `preview/`, `output/`, `template-starter-preview/`, or any rendered PPTX preview are invalid.
 - If `downgrade_mode` is true, `user_decisions.md` must explain that the user accepted a style-inspired rebuild rather than comp-faithful reconstruction. Do not infer this from automation mode.
 - The final council must compare PPTX previews against this file.
+
+## reconstruction_manifest.json
+
+Use when `deck.mode` is `reconstruction-only` or `repair-existing-pptx`.
+
+```json
+{
+  "lock_state": "draft | locked",
+  "mode": "reconstruction-only | repair-existing-pptx",
+  "source": "user_supplied_slide_images",
+  "slide_count": 0,
+  "page_sharding": {
+    "enabled": true,
+    "per_slide_pptx_required": true,
+    "merge_after_page_approval": true,
+    "parallel_subagents_recommended": true
+  },
+  "global_rules": {
+    "skip_full_pipeline_gates": true,
+    "visual_fidelity_priority": "pixel_locked_hybrid",
+    "ordinary_table_or_card_rebuild_forbidden": true,
+    "native_text_boxes_allowed_only_as_transparent_overlays": true
+  },
+  "slides": [
+    {
+      "slide_id": "slide-001",
+      "page_number": 1,
+      "source_image_path": "slides/slide-001-comp.png",
+      "text_source_status": "provided | ocr_verified | user_accepted_image_text | image_only_accepted",
+      "text_source_path": "input/slide-001-text.md",
+      "reconstruction_mode": "pixel_locked_hybrid",
+      "required_editable_overlays": [
+        "title",
+        "body",
+        "key numbers",
+        "footer/page marker"
+      ],
+      "output_slide_pptx": "slide-modules/slide-001.pptx",
+      "preview_path": "preview/slide-001-pptx.png",
+      "review_status": "not_started | needs_iteration | approved | user_accepted_risk"
+    }
+  ],
+  "open_questions": []
+}
+```
+
+Rules:
+
+- `lock_state` must be `locked` before PPTX reconstruction starts.
+- Each slide must point to an existing high-resolution source image. A full-deck contact sheet is not a substitute unless the user accepts lower fidelity.
+- `text_source_status` must be explicit. If text is OCR-derived, it must be verified or accepted before final export.
+- `page_sharding.enabled`, `per_slide_pptx_required`, and `merge_after_page_approval` must be true.
+- `output_slide_pptx` and `preview_path` are required before final export.
 
 ## content_review.md
 

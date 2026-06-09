@@ -17,6 +17,8 @@ Use only the roles needed for the current phase.
 | style contact sheet selection | light P0 safety screen before user choice; after choice use `narrative-invariance`, `style-coherence`, `color-brand`, `executive-polish`, `design-diversity`, `taste-direction`, `image-art-director`, `template-fidelity` when a template exists | no single-slide comps until selected direction has no P0/P1 blockers |
 | single-slide comp review | `narrative-invariance`, `content-integrity`, `text-typography`, `visual-fidelity`, `image-art-director`, `layout-pptx-feasibility`, `chart-logic`, `asset-authenticity`, `template-fidelity` when a template exists, `accessibility-readability` | no visual contract or PPTX build until P0/P1 comp blockers resolved |
 | visual contract lock | `visual-fidelity`, `layout-pptx-feasibility`, `chart-logic`, `template-fidelity` when a template exists | no PPTX build until each slide has an approved comp, comp-faithful visual archetype, template mapping, reconstruction mode, comp backplate plan, text mask plan, editable overlay plan, and native reconstruction plan |
+| reconstruction-only input lock | `reconstruction-input-verifier`, `text-typography`, `layout-pptx-feasibility`, `template-fidelity` when a template exists | no PPTX build until every page has a source image, text source status, pixel_locked_hybrid visual contract, and page-sharded output plan |
+| page-sharded PPTX reconstruction | `pptx-reconstruction-fidelity`, `visual-fidelity`, `text-typography`, `layout-pptx-feasibility`, `accessibility-readability`, `template-fidelity` when a template exists | no merge until each `slide-modules/slide-XXX.pptx` preview matches the source image and has editable main information |
 | PPTX preview review | all relevant roles below, including `pptx-reconstruction-fidelity` | no export until every required role approves |
 | final synthesis | `deck-council-synthesizer` | write `qa/final-council.md` and final export decision |
 
@@ -256,6 +258,16 @@ Return Feedback JSON.
 ```text
 You are the layout-pptx-feasibility reviewer. Decide whether the artifact can be rebuilt as editable PPTX without quality collapse.
 Identify which parts should be native text/shapes/charts and which should remain full-slide or cropped image backplates. Prefer pixel_locked_hybrid or sliced_hybrid when native rebuild would collapse the design. Flag comps that lack a workable text mask/editable overlay plan.
+Return Feedback JSON.
+```
+
+### reconstruction-input-verifier
+
+```text
+You are the reconstruction-input-verifier. Review reconstruction_manifest.json, visual_contract.json, source slide images, and optional per-slide text files before PPTX reconstruction.
+Check that each final slide has a high-resolution source image, stable slide order, text_source_status, required editable overlay plan, and output_slide_pptx path.
+Flag P0 if only a contact sheet was supplied as the source for multiple slides without user acceptance, if any slide image is missing, if page order is ambiguous, or if reconstruction_manifest.lock_state is not locked.
+Flag P1 if OCR text has not been verified, if a page lacks a text mask plan, if native text boxes are planned as visible ordinary boxes rather than transparent overlays, or if the plan would rebuild complex visuals as plain tables/cards.
 Return Feedback JSON.
 ```
 

@@ -55,7 +55,7 @@ def main() -> int:
     parser.add_argument("--title", required=True)
     parser.add_argument(
         "--mode",
-        choices=["create", "template-following", "targeted-edit"],
+        choices=["create", "template-following", "targeted-edit", "reconstruction-only", "repair-existing-pptx"],
         default="create",
     )
     parser.add_argument("--root", default=None)
@@ -82,9 +82,11 @@ def main() -> int:
         "qa/reviews/style-selection",
         "qa/reviews/slide-comp",
         "qa/reviews/visual-contract",
+        "qa/reviews/reconstruction-only",
         "qa/reviews/pptx-preview",
         "qa/reviews/final-council",
         "prompts",
+        "slide-modules",
         "output",
     ]
     for name in dirs:
@@ -356,6 +358,26 @@ def main() -> int:
         "minimum_non_title_rich_visual_ratio": 0.6,
         "slides": [],
     }
+    reconstruction_manifest = {
+        "lock_state": "draft",
+        "mode": args.mode,
+        "source": "user_supplied_slide_images",
+        "slide_count": 0,
+        "page_sharding": {
+            "enabled": args.mode in {"reconstruction-only", "repair-existing-pptx"},
+            "per_slide_pptx_required": True,
+            "merge_after_page_approval": True,
+            "parallel_subagents_recommended": True,
+        },
+        "global_rules": {
+            "skip_full_pipeline_gates": args.mode in {"reconstruction-only", "repair-existing-pptx"},
+            "visual_fidelity_priority": "pixel_locked_hybrid",
+            "ordinary_table_or_card_rebuild_forbidden": True,
+            "native_text_boxes_allowed_only_as_transparent_overlays": True,
+        },
+        "slides": [],
+        "open_questions": [],
+    }
 
     files = {
         "pipeline_state.json": json.dumps(pipeline_state, ensure_ascii=False, indent=2) + "\n",
@@ -366,6 +388,7 @@ def main() -> int:
         "style_brief.json": json.dumps(style_brief, ensure_ascii=False, indent=2) + "\n",
         "template-frame-map.json": json.dumps(template_frame_map, ensure_ascii=False, indent=2) + "\n",
         "visual_contract.json": json.dumps(visual_contract, ensure_ascii=False, indent=2) + "\n",
+        "reconstruction_manifest.json": json.dumps(reconstruction_manifest, ensure_ascii=False, indent=2) + "\n",
         "template-audit.md": (
             "# Template Audit\n\n"
             "## Status\nNOT_STARTED\n\n"
@@ -452,6 +475,7 @@ def main() -> int:
         "style_brief": str(workspace / "style_brief.json"),
         "template_frame_map": str(workspace / "template-frame-map.json"),
         "visual_contract": str(workspace / "visual_contract.json"),
+        "reconstruction_manifest": str(workspace / "reconstruction_manifest.json"),
         "template_audit": str(workspace / "template-audit.md"),
         "deviation_log": str(workspace / "deviation-log.md"),
         "source_notes": str(workspace / "source_notes.md"),

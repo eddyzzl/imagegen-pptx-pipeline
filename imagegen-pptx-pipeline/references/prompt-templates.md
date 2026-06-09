@@ -333,6 +333,47 @@ Output:
 - short note listing editable elements, retained image areas, and any fidelity deviations
 ```
 
+## 7B. Reconstruction-Only Image To PPTX
+
+```text
+Run only the image-to-editable-PPTX reconstruction phase. Do not redo content planning, narrative selection, style exploration, or ImageGen.
+
+Inputs:
+- Final per-slide source images: <slide-001 image ... slide-N image>
+- Per-slide exact text or OCR verification plan: <text paths/status>
+- Optional template/source PPTX: <template path>
+- Output deck name: <name>
+
+Goal:
+Convert user-supplied final slide images into an editable 16:9 PPTX using page-sharded pixel_locked_hybrid reconstruction.
+
+Required setup:
+1. Initialize workspace with `--mode reconstruction-only` or `--mode repair-existing-pptx`.
+2. Copy/register each source image as `slides/slide-XXX-comp.png` or record its path in `reconstruction_manifest.json`.
+3. Create minimal locked `deck_spec.json` with slide count, slide IDs, exact overlay text when available, and editability targets.
+4. Set `style_brief.json.selected_option=user-supplied-final-images`.
+5. Create `visual_contract.json` with each source image as the approved comp, `reconstruction_mode=pixel_locked_hybrid`, a full-slide or sliced `comp_backplate`, `text_mask_plan`, and `editable_overlay_plan`.
+6. Set `reconstruction_manifest.json.lock_state=locked` only after each slide has a source image and text_source_status is provided, ocr_verified, user_accepted_image_text, or image_only_accepted.
+
+Per-slide build:
+1. Build each page independently as `slide-modules/slide-XXX.pptx`.
+2. Insert the source image as the full-slide/sliced visual backplate.
+3. Mask text regions that will be editable.
+4. Overlay editable native PPT text/numbers/labels/page markers. Native text boxes must be transparent overlays that match the image, not ordinary PPT blocks.
+5. Keep complex visuals as image layers. Do not redraw them as plain tables, card grids, boxes, or generic diagrams.
+6. Render `preview/slide-XXX-pptx.png` and compare it with the source image.
+7. Iterate only the failed slide module until P0/P1 reconstruction findings are resolved.
+
+Merge:
+- Merge approved slide modules only after every page review is approved or user_accepted_risk.
+- Then run final council review on the merged deck.
+
+Forbidden:
+- Do not use a full-deck contact sheet as a replacement for per-slide source images unless the user accepts lower fidelity.
+- Do not create a normal-looking PPT table/card/text layout as a substitute for the source image.
+- Do not deliver a slide as only one flat image unless the user explicitly requested non-editable output.
+```
+
 ## 8. Visual Contract Extraction
 
 ```text

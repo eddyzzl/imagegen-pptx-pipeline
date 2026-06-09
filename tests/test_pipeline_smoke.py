@@ -51,6 +51,28 @@ class PipelineSmokeTests(unittest.TestCase):
             self.assertTrue((workspace / "slide_intent_plan.json").exists())
             self.assertTrue((workspace / "slide_intent_matrix.md").exists())
             self.assertTrue((workspace / "narrative_plan.json").exists())
+            self.assertTrue((workspace / "reconstruction_manifest.json").exists())
+
+    def test_init_workspace_accepts_reconstruction_only_mode(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            result = run_json(
+                [
+                    sys.executable,
+                    str(INIT_SCRIPT),
+                    "--slug",
+                    "reconstruct",
+                    "--title",
+                    "Reconstruct Deck",
+                    "--mode",
+                    "reconstruction-only",
+                    "--root",
+                    tmp,
+                ]
+            )
+            workspace = Path(result["workspace"])
+            manifest = json.loads((workspace / "reconstruction_manifest.json").read_text(encoding="utf-8"))
+            self.assertEqual(manifest["mode"], "reconstruction-only")
+            self.assertTrue(manifest["page_sharding"]["enabled"])
 
     def test_slide_intent_gate_fails_when_not_locked(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -240,6 +262,119 @@ class PipelineSmokeTests(unittest.TestCase):
             failures = []
             gate_module.check_visual_contract(workspace, deck_spec, visual_contract, failures)
             self.assertEqual(failures, [])
+
+    def test_reconstruction_only_before_pptx_skips_full_pipeline_gates(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            result = run_json(
+                [
+                    sys.executable,
+                    str(INIT_SCRIPT),
+                    "--slug",
+                    "reconstruct-pass",
+                    "--title",
+                    "Reconstruct Pass",
+                    "--mode",
+                    "reconstruction-only",
+                    "--root",
+                    tmp,
+                ]
+            )
+            workspace = Path(result["workspace"])
+            (workspace / "slides" / "slide-001-comp.png").write_bytes(b"fake image bytes")
+
+            pipeline_state = json.loads((workspace / "pipeline_state.json").read_text(encoding="utf-8"))
+            pipeline_state["current_stage"] = "visual_contract"
+            pipeline_state["stage_history"].extend(
+                [
+                    {"stage": "reconstruction_input_lock", "status": "completed", "timestamp": "test", "notes": ""},
+                    {"stage": "visual_contract", "status": "completed", "timestamp": "test", "notes": ""},
+                ]
+            )
+            (workspace / "pipeline_state.json").write_text(
+                json.dumps(pipeline_state, ensure_ascii=False, indent=2) + "\n",
+                encoding="utf-8",
+            )
+
+            deck_spec = json.loads((workspace / "deck_spec.json").read_text(encoding="utf-8"))
+            deck_spec["deck"].update({"slide_count": 1, "lock_state": "locked"})
+            deck_spec["slides"] = [{"slide_id": "slide-001", "page_number": 1, "title": "Editable title"}]
+            (workspace / "deck_spec.json").write_text(
+                json.dumps(deck_spec, ensure_ascii=False, indent=2) + "\n",
+                encoding="utf-8",
+            )
+
+            manifest = json.loads((workspace / "reconstruction_manifest.json").read_text(encoding="utf-8"))
+            manifest.update(
+                {
+                    "lock_state": "locked",
+                    "slide_count": 1,
+                    "slides": [
+                        {
+                            "slide_id": "slide-001",
+                            "page_number": 1,
+                            "source_image_path": "slides/slide-001-comp.png",
+                            "text_source_status": "provided",
+                            "text_source_path": "",
+                            "reconstruction_mode": "pixel_locked_hybrid",
+                            "required_editable_overlays": ["title"],
+                            "output_slide_pptx": "slide-modules/slide-001.pptx",
+                            "preview_path": "preview/slide-001-pptx.png",
+                            "review_status": "not_started",
+                        }
+                    ],
+                }
+            )
+            (workspace / "reconstruction_manifest.json").write_text(
+                json.dumps(manifest, ensure_ascii=False, indent=2) + "\n",
+                encoding="utf-8",
+            )
+
+            visual_contract = json.loads((workspace / "visual_contract.json").read_text(encoding="utf-8"))
+            visual_contract.update(
+                {
+                    "selected_style": "user-supplied-final-images",
+                    "per_slide_comps_complete": True,
+                    "slides": [
+                        {
+                            "slide_id": "slide-001",
+                            "comp_path": "slides/slide-001-comp.png",
+                            "visual_archetype": "source image",
+                            "reconstruction_mode": "pixel_locked_hybrid",
+                            "comp_backplate": {
+                                "strategy": "full_slide",
+                                "path": "slides/slide-001-comp.png",
+                                "insert_first": True,
+                                "covers_full_slide": True,
+                            },
+                            "text_mask_plan": [
+                                {"region": "title", "method": "shape mask", "reason": "editable overlay"}
+                            ],
+                            "editable_overlay_plan": ["editable title"],
+                        }
+                    ],
+                }
+            )
+            (workspace / "visual_contract.json").write_text(
+                json.dumps(visual_contract, ensure_ascii=False, indent=2) + "\n",
+                encoding="utf-8",
+            )
+
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    str(GATE_SCRIPT),
+                    "--workspace",
+                    str(workspace),
+                    "--stage",
+                    "before-pptx",
+                ],
+                check=False,
+                text=True,
+                capture_output=True,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+            payload = json.loads(completed.stdout)
+            self.assertEqual(payload["status"], "PASS")
 
 
 if __name__ == "__main__":

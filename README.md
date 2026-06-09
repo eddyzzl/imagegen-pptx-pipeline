@@ -4,6 +4,8 @@ An agent skill for producing editable PowerPoint decks from outlines, templates,
 
 The pipeline uses image generation as the primary visual design engine, then reconstructs approved slide images into editable PPTX slides with hard gates for content, slide intent, narrative, style selection, visual review, and final export.
 
+It can also run in `reconstruction-only` mode when you already have final per-slide images and only want to convert those images into an editable PPTX.
+
 ## What It Is For
 
 - Product, company, model or technical, sales, strategy, investor, training, and internal review decks
@@ -25,6 +27,8 @@ The pipeline uses image generation as the primary visual design engine, then rec
 9. Review and iterate slide comps before PPTX work.
 10. Reconstruct approved comps as editable PowerPoint slides.
 11. Run final council review before export.
+
+For `reconstruction-only`, steps 1-6 are skipped. User-supplied per-slide images are registered as approved comps, then each slide is reconstructed as an independent PPTX module and merged after review.
 
 ## Repository Layout
 
@@ -125,4 +129,5 @@ tools/sync-to-codex.sh --codex-home /path/to/.codex
 - PPTX reconstruction defaults to pixel-locked hybrid fidelity: approved comps may be used as full-slide or sliced visual backplates, with editable text/numbers/simple shapes overlaid.
 - The workflow does not promise that every complex visual becomes native editable PPT geometry; it preserves complex visuals as image layers when that is required for visual fidelity.
 - PPTX reconstruction must not downgrade rich comps into generic tables or card grids.
+- Reconstruction-only uses page-sharded modules: `slide-modules/slide-XXX.pptx` is reviewed before merging into the final deck.
 - Every user pause is stateful through `pipeline_state.json`.

@@ -5,7 +5,7 @@ description: End-to-end stateful workflow for designing and generating editable 
 
 # ImageGen PPTX Pipeline
 
-Build an editable PPTX deck through a controlled pipeline:
+Build an editable PPTX deck through a controlled pipeline, or reconstruct an editable deck directly from user-supplied final slide images.
 
 1. Convert the user's outline, template, historical decks, data, and assets into structured truth files.
 2. Persist workflow state so user-question pauses can resume without losing the skill context.
@@ -37,6 +37,9 @@ Default reconstruction mode is **pixel-locked hybrid**, not native-only redraw: 
 - **Images are iterated before PPTX:** subagents/reviewer roles review each single-slide comp. P0/P1 findings must trigger targeted ImageGen regeneration of that slide before PPTX authoring.
 - **PPTX is a pixel-locked hybrid reconstruction of the approved comp:** final slides must preserve the approved comp's appearance by default. Use full-slide or sliced comp backplates when native shape rebuilding would degrade the design, then overlay editable main text/numbers/simple shapes from `deck_spec.json`. Native-only redraw is allowed only when it visibly matches the comp or the user explicitly accepts a fidelity downgrade.
 - **Editable does not mean fully native:** complex diagrams, depth fields, textures, glow, glass, illustrations, screenshots, dense icons, and generated visual systems may remain image layers. Required editability applies to main titles, claims, body text, key numbers, labels, footers, and simple callouts unless a user-approved exception is documented.
+- **Reconstruction-only may skip planning, not fidelity:** when the user supplies final per-slide images, use `reconstruction-only` mode. Skip content/narrative/style generation, but still require per-slide image registration, exact text/OCR verification, visual contract, page-level reconstruction review, rendered previews, and final council.
+- **Page-sharded reconstruction is preferred:** in reconstruction-only or repair mode, build each slide as an independent `slide-modules/slide-XXX.pptx`, review it against the source image, then merge approved slide modules. This isolates failures and prevents one bad page from degrading the deck.
+- **No ordinary visual rebuild:** never replace an approved visual comp with a normal-looking table, card grid, default PPT text block, or square-box diagram. Native text boxes are allowed only as transparent/editable overlays that match the source typography and placement.
 - **No self-certified comps:** never use final PPTX previews, template-starter previews, or output contact sheets as approved ImageGen comps. Approved comps must be independently generated files under `slides/slide-XXX-comp.png` or an explicitly documented equivalent comp path.
 - **No silent downgrade:** do not switch to a style-inspired rebuild, blank-template rebuild, native-only redraw, table-only/card-only simplification, flat corporate grid, or generic PPT layout unless the user explicitly accepts that downgrade in `user_decisions.md`.
 - **Advanced design bar:** unless the user asks for a plain compliance deck, visual comps should use richer slide-specific diagrams, layered composition, controlled depth, custom chart language, and executive polish. A deck made mostly of plain tables, equal rectangles, or default card grids fails this skill.
@@ -86,7 +89,7 @@ Use the gate checker to prevent prose-only compliance from being bypassed:
 SKILL_DIR=<directory containing this SKILL.md>
 python "$SKILL_DIR/scripts/check_pipeline_gates.py" \
   --workspace <workspace> \
-  --stage <content-lock|slide-intent-lock|narrative-lock|style-selection|before-pptx|final>
+  --stage <content-lock|slide-intent-lock|narrative-lock|style-selection|reconstruction-lock|before-pptx|final>
 ```
 
 Run it at these points:
@@ -95,6 +98,7 @@ Run it at these points:
 - after user/automation slide-intent confirmation: `--stage slide-intent-lock`
 - after user/automation narrative selection: `--stage narrative-lock`
 - after user/automation style selection: `--stage style-selection`
+- after reconstruction-only input registration and text/source-image lock: `--stage reconstruction-lock`
 - before any PPTX construction code: `--stage before-pptx`
 - before final response/export delivery: `--stage final`
 
@@ -108,7 +112,7 @@ Before asking the user, update `pipeline_state.json` with:
 
 - `skill`: `imagegen-pptx-pipeline`
 - `workspace`: absolute workspace path
-- `current_stage`: one of `content_gate`, `slide_intent_lock`, `narrative_selection`, `style_count`, `style_selection`, `single_slide_comps`, `slide_comp_review`, `visual_contract`, `pptx_reconstruction`, `final_review`
+- `current_stage`: one of `content_gate`, `slide_intent_lock`, `narrative_selection`, `style_count`, `style_selection`, `single_slide_comps`, `slide_comp_review`, `reconstruction_input_lock`, `visual_contract`, `page_reconstruction`, `pptx_reconstruction`, `final_review`
 - `awaiting_user`: `true`
 - `required_user_reply`: exact question or decision needed
 - `next_action`: first action to take after the user replies
@@ -139,7 +143,7 @@ SKILL_DIR=<directory containing this SKILL.md>
 python "$SKILL_DIR/scripts/init_pipeline_workspace.py" \
   --slug <task-slug> \
   --title "<deck title>" \
-  --mode <create|template-following|targeted-edit>
+  --mode <create|template-following|targeted-edit|reconstruction-only|repair-existing-pptx>
 ```
 
 Use the printed `workspace` path for all scratch files. Keep final deliverables under its `output/` directory unless the user supplied a destination.
@@ -151,6 +155,8 @@ Mode selection:
 - Use `template-following` whenever the user supplies a PPTX as a template, corporate template, source deck, or "follow this layout/style" deck.
 - Use `create` when no deck/template is supplied.
 - Use `targeted-edit` for small edits to an existing deck.
+- Use `reconstruction-only` when the user already has final per-slide images and wants to convert them into an editable PPTX without rerunning content, narrative, style, or ImageGen phases.
+- Use `repair-existing-pptx` when the user has a bad PPTX plus source images and wants to repair each slide to match the images.
 
 ### 2. Read Inputs
 
@@ -170,6 +176,41 @@ When a template/source PPTX exists, also write:
 - `template-frame-map.json`: which template/source slide each target slide inherits from, which elements must be preserved, and which content zones may change.
 - `deviation-log.md`: any user-approved template deviations. Empty is acceptable; missing is not.
 
+### 2A. Reconstruction-Only Fast Path
+
+Use this path when the user supplies final per-slide images and asks to convert them to PPTX. Do not rerun content planning, narrative selection, visual style exploration, or ImageGen unless a page image is missing/invalid and the user asks to regenerate it.
+
+Required inputs:
+
+- one high-resolution 16:9 image per final slide, preferably named or ordered as `slide-001`, `slide-002`, etc.
+- exact text per slide, or permission to OCR and ask the user/agent reviewers to verify text before PPTX reconstruction
+- optional template/source PPTX for logos, footer, page markers, or corporate chrome
+
+Write and lock:
+
+- `reconstruction_manifest.json`: source image path, text source status, reconstruction mode, per-slide output path, and page-sharding status.
+- minimal `deck_spec.json`: slide count, slide IDs, exact overlay text when known, and editability targets. Set `deck.lock_state="locked"` after text is provided or OCR is verified/accepted.
+- `visual_contract.json`: each supplied image becomes the approved comp with `reconstruction_mode="pixel_locked_hybrid"` unless explicitly overridden.
+
+In this mode:
+
+- `style_brief.json.selected_option` may be `user-supplied-final-images`.
+- `visual_contract.json.contact_sheet` is optional; per-slide images are the source of truth.
+- The gate checker may skip content, slide-intent, narrative, and style-selection gates, but it must still check `reconstruction_manifest.json`, `visual_contract.json`, per-slide preview review, and final export readiness.
+
+Page-sharded build rules:
+
+1. Build each slide independently as `slide-modules/slide-XXX.pptx`.
+2. Use the source image as a full-slide or sliced backplate.
+3. Mask/cover source-image text areas that will be editable.
+4. Overlay editable native PPT text/numbers/labels/page markers.
+5. Keep complex visuals as image layers. Do not redraw them as ordinary PPT tables, cards, or boxes.
+6. Render `preview/slide-XXX-pptx.png` and compare against the source image before merging.
+7. If a slide fails visual fidelity, repair only that slide module and rerender.
+8. Merge approved slide modules into the final deck only after all page-level P0/P1 findings are resolved or explicitly accepted.
+
+If the user provides only a contact sheet, stop and ask for individual high-resolution slide images unless they explicitly accept lower-fidelity reconstruction.
+
 ### 3. Produce Draft Truth Files
 
 Write these files before calling ImageGen, but keep `deck_spec.json.lock_state` as `draft` or `needs_user_confirmation` until the next phase passes:
@@ -182,6 +223,7 @@ Write these files before calling ImageGen, but keep `deck_spec.json.lock_state` 
 - `narrative_plan.json`: narrative treatment options, selected treatment, slide-by-slide narrative cells, and lock status.
 - `narrative_matrix.md`: user-facing Markdown table whose rows are slides and whose columns are narrative options.
 - `style_brief.json`: requested number of design directions, direction names, diversity axes, visual ambition level, template constraints, built-in taste guidance, and option selection status.
+- `reconstruction_manifest.json`: direct image-to-PPTX source manifest and per-slide module status, required in `reconstruction-only` and `repair-existing-pptx`.
 - `template-frame-map.json`: required when a template/source PPTX exists; maps target slides to inherited source slides and preserved elements.
 - `source_notes.md`: source provenance, missing inputs, assumptions, and asset authenticity notes.
 - `content_review.md`: content critique, unresolved risks, and user-facing questions.
@@ -495,6 +537,16 @@ For **create** mode:
 - Insert the approved comp as a full-slide or sliced backplate before adding editable overlays, unless the slide is explicitly marked `native_rebuild` with evidence.
 - Main text, numbers, footers, and page markers must be native editable PPT elements.
 - Preserve complex visual assets as cropped high-quality images when rebuilding them as native shapes would degrade quality.
+
+For **reconstruction-only** and **repair-existing-pptx** mode:
+
+- Treat each user-supplied slide image as the approved comp.
+- Build one independent PPTX module per slide under `slide-modules/slide-XXX.pptx`.
+- Do not create ordinary-looking native tables/cards/text blocks as a substitute for the image design.
+- Native text boxes are allowed only for editable overlays and must match the source image's typography, position, color, line breaks, and hierarchy.
+- Keep complex visual design, diagrams, shadows, depth, icons, and background systems as full-slide or sliced image backplates.
+- Render and approve each slide module before merging. Do not merge failed pages into the final deck.
+- Merge approved slide modules into `output/<deck-name>.pptx` only after all page-level previews pass `pptx-reconstruction-fidelity`.
 
 Never deliver a slide as only one flat image with no editable main information unless the user explicitly requests non-editable output. A whole-slide comp backplate is allowed and recommended when it is combined with editable overlays and documented retained-image areas.
 
