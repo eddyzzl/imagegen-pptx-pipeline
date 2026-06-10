@@ -38,6 +38,47 @@ CONTENT_STYLE_TERMS = (
     "路线",
     "成果",
 )
+REQUIRED_RETRY_PRESERVED_FIELDS = (
+    "locked_slide_order",
+    "slide_titles",
+    "core_claims",
+    "required_data",
+    "proof_object_intent",
+    "template_constraints",
+    "visual_density_floor",
+    "aesthetic_family",
+)
+RETRY_FAILURE_CLASSES = {
+    "server_error",
+    "service_error",
+    "timeout",
+    "prompt_too_large",
+    "wrong_asset_type",
+    "low_resolution",
+    "blur",
+    "other",
+}
+RETRY_FINAL_STATUSES = {"retry_pending", "generated", "blocked_imagegen_failure"}
+RETRY_NEXT_ACTIONS = {"retry_imagegen", "blocked_ask_user", "regenerate_asset", "accept_generated"}
+RETRY_DEGRADATION_FLAGS = (
+    "removed_locked_content",
+    "reduced_content_density",
+    "reduced_visual_density",
+    "reduced_visual_complexity",
+    "used_html_surrogate",
+    "used_browser_surrogate",
+    "switched_to_generic_ppt",
+)
+REQUIRED_FAILURE_POLICY_PRESERVE = (
+    "locked slide order",
+    "slide titles",
+    "core claims",
+    "required data",
+    "proof-object intent",
+    "template constraints",
+    "visual density floor",
+    "aesthetic family",
+)
 
 
 def load_json(path: Path, failures: list[str]) -> dict:
@@ -384,6 +425,144 @@ def check_image_quality_policy(policy, failures: list[str], owner: str) -> dict:
     return policy
 
 
+def check_imagegen_failure_policy(policy, failures: list[str], owner: str) -> dict:
+    if not isinstance(policy, dict) or not policy:
+        failures.append(f"{owner} imagegen_failure_policy is missing")
+        return {}
+    if policy.get("enabled") is not True:
+        failures.append(f"{owner} imagegen_failure_policy.enabled must be true")
+    if policy.get("fail_closed") is not True:
+        failures.append(f"{owner} imagegen_failure_policy.fail_closed must be true")
+    if safe_int(policy.get("max_retries_per_asset")) < 1:
+        failures.append(f"{owner} imagegen_failure_policy.max_retries_per_asset must be at least 1")
+    if policy.get("prompt_compression_allowed") is not True:
+        failures.append(f"{owner} imagegen_failure_policy.prompt_compression_allowed must be true")
+    for key in (
+        "content_density_may_be_reduced",
+        "visual_complexity_may_be_reduced",
+        "html_surrogate_allowed",
+        "generic_ppt_fallback_allowed",
+    ):
+        if policy.get(key) is not False:
+            failures.append(f"{owner} imagegen_failure_policy.{key} must be false")
+    if policy.get("block_after_repeated_failures") is not True:
+        failures.append(f"{owner} imagegen_failure_policy.block_after_repeated_failures must be true")
+    preserve = policy.get("prompt_compression_must_preserve") or []
+    preserve_text = {str(item).strip().lower() for item in preserve if item}
+    for required in REQUIRED_FAILURE_POLICY_PRESERVE:
+        if required.lower() not in preserve_text:
+            failures.append(
+                f"{owner} imagegen_failure_policy.prompt_compression_must_preserve missing {required!r}"
+            )
+    if not policy.get("retry_log_path"):
+        failures.append(f"{owner} imagegen_failure_policy.retry_log_path is missing")
+    return policy
+
+
+def ready_style_asset_ids(style_brief: dict) -> set[str]:
+    ready: set[str] = set()
+    ready_statuses = {"generated", "ready_for_user", "selected", "approved"}
+    for lane in style_brief.get("style_lanes") or []:
+        if not isinstance(lane, dict) or lane.get("status") not in ready_statuses:
+            continue
+        for key in ("asset_id", "style_lane_id", "option_id", "output_path"):
+            value = lane.get(key)
+            if value:
+                ready.add(str(value))
+    for sheet in style_brief.get("style_contact_sheets") or []:
+        if not isinstance(sheet, dict):
+            continue
+        for key in ("asset_id", "style_lane_id", "option_id", "path", "output_path"):
+            value = sheet.get(key)
+            if value:
+                ready.add(str(value))
+    return ready
+
+
+def load_imagegen_retry_log(workspace: Path, style_brief: dict, policy: dict, failures: list[str]) -> dict:
+    embedded = style_brief.get("imagegen_retry_log")
+    if isinstance(embedded, dict):
+        return embedded
+    retry_log_ref = embedded or policy.get("retry_log_path")
+    if not retry_log_ref:
+        return {}
+    path = resolve_path(workspace, retry_log_ref)
+    if path is None:
+        return {}
+    if not path.exists():
+        failures.append(f"imagegen retry log is referenced but missing: {path}")
+        return {}
+    return load_json(path, failures)
+
+
+def check_imagegen_retry_log(workspace: Path, style_brief: dict, policy: dict, failures: list[str]) -> None:
+    retry_log = load_imagegen_retry_log(workspace, style_brief, policy, failures)
+    if not retry_log:
+        return
+    attempts = retry_log.get("attempts") or []
+    if not isinstance(attempts, list):
+        failures.append("imagegen_retry_log.json attempts must be a list")
+        return
+    ready_assets = ready_style_asset_ids(style_brief)
+    max_retries = safe_int(policy.get("max_retries_per_asset")) or 1
+    max_attempt_by_asset: dict[str, int] = {}
+    for idx, attempt in enumerate(attempts, 1):
+        if not isinstance(attempt, dict):
+            failures.append(f"imagegen retry attempt {idx} must be an object")
+            continue
+        asset_id = str(attempt.get("asset_id") or "").strip()
+        if not asset_id:
+            failures.append(f"imagegen retry attempt {idx} missing asset_id")
+        stage = attempt.get("stage")
+        if stage not in {"style-contact-sheet", "single-slide-comp"}:
+            failures.append(f"imagegen retry attempt {idx} stage is invalid: {stage!r}")
+        attempt_index = safe_int(attempt.get("attempt_index"))
+        if attempt_index < 1:
+            failures.append(f"imagegen retry attempt {idx} attempt_index must be at least 1")
+        elif asset_id:
+            max_attempt_by_asset[asset_id] = max(max_attempt_by_asset.get(asset_id, 0), attempt_index)
+        failure_class = attempt.get("failure_class")
+        if failure_class not in RETRY_FAILURE_CLASSES:
+            failures.append(f"imagegen retry attempt {idx} failure_class is invalid: {failure_class!r}")
+        next_action = attempt.get("next_action")
+        if next_action not in RETRY_NEXT_ACTIONS:
+            failures.append(f"imagegen retry attempt {idx} next_action is invalid: {next_action!r}")
+        final_status = attempt.get("final_status")
+        if final_status not in RETRY_FINAL_STATUSES:
+            failures.append(f"imagegen retry attempt {idx} final_status is invalid: {final_status!r}")
+        for flag in RETRY_DEGRADATION_FLAGS:
+            if attempt.get(flag) is True:
+                failures.append(f"imagegen retry attempt {idx} used forbidden downgrade flag: {flag}")
+        if attempt.get("used_html_surrogate") is True or attempt.get("used_browser_surrogate") is True:
+            failures.append(f"imagegen retry attempt {idx} cannot use HTML/browser output after ImageGen failure")
+        if attempt.get("switched_to_generic_ppt") is True:
+            failures.append(f"imagegen retry attempt {idx} cannot switch to a generic PPT fallback")
+        if final_status in {"retry_pending", "blocked_imagegen_failure"} and asset_id in ready_assets:
+            failures.append(
+                f"imagegen retry attempt {idx} leaves asset {asset_id!r} unresolved but it is marked ready/selected"
+            )
+        compression_strategy = str(attempt.get("compression_strategy") or "").strip()
+        retry_prompt_path = attempt.get("retry_prompt_path")
+        if compression_strategy or retry_prompt_path:
+            preserved = attempt.get("compression_preserved") or {}
+            if not isinstance(preserved, dict):
+                failures.append(f"imagegen retry attempt {idx} compression_preserved must be an object")
+                preserved = {}
+            for field in REQUIRED_RETRY_PRESERVED_FIELDS:
+                if preserved.get(field) is not True:
+                    failures.append(f"imagegen retry attempt {idx} compression_preserved.{field} must be true")
+        for path_key in ("original_prompt_path", "retry_prompt_path"):
+            value = attempt.get(path_key)
+            if value:
+                require_file(workspace, value, f"imagegen retry attempt {idx} {path_key}", failures)
+    for asset_id, max_attempt in max_attempt_by_asset.items():
+        if max_attempt > max_retries:
+            failures.append(
+                f"imagegen retry asset {asset_id!r} exceeded max_retries_per_asset={max_retries}; "
+                f"highest attempt_index={max_attempt}"
+            )
+
+
 def check_style_gate(
     workspace: Path,
     deck_spec: dict,
@@ -415,6 +594,12 @@ def check_style_gate(
     if not has_built_in_taste_source(style_taste):
         failures.append("style_brief.json taste_guidance.sources must include built-in-ppt-taste-system")
     quality_policy = check_image_quality_policy(style_brief.get("image_quality_policy"), failures, "style_brief.json")
+    failure_policy = check_imagegen_failure_policy(
+        style_brief.get("imagegen_failure_policy"),
+        failures,
+        "style_brief.json",
+    )
+    check_imagegen_retry_log(workspace, style_brief, failure_policy, failures)
     contact_min = quality_policy.get("minimum_acceptable_contact_sheet_px") or {}
     min_contact_width = safe_int(contact_min.get("width"))
     min_contact_height = safe_int(contact_min.get("height"))

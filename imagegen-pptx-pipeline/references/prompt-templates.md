@@ -187,6 +187,7 @@ Output requirements:
 18. Request maximum available ImageGen fidelity: high-detail rendering, crisp vector-like icons, sharp fine lines, clean anti-aliased typography, high-contrast labels, and no blur/compression artifacts.
 19. Use a large, clean contact-sheet canvas. Each thumbnail must be sharp enough to judge composition, icon style, title hierarchy, chart strokes, and module boundaries. Do not accept fuzzy thumbnails.
 20. Do not create HTML/CSS/SVG blueprints, browser screenshots, React pages, canvas renders, PPTX previews, or static mockups as substitutes for ImageGen outputs.
+21. If ImageGen fails and this prompt must be retried shorter, preserve the locked slide order, slide titles, core claims, required data, proof-object intent, template constraints, visual density floor, and assigned aesthetic family. Remove only duplicated prose, internal rationale, repeated constraints, or verbose citations. Do not simplify the deck into sparse cards/tables, do not reduce slide count, and do not switch to HTML or browser-rendered previews.
 
 Visual quality bar:
 The result should look like a polished commercial/executive deck direction, not a generic default PPT template or scattered draft pages. Use ImageGen's strength to explore crafted composition, depth, diagrams, and visual metaphor while staying within source and template constraints.
@@ -197,7 +198,7 @@ If `style_brief.direction_count` is 0 or `selection_mode` is ask_user with no se
 
 ## 4B. Multi-Option Fallback Contact Sheet
 
-Use this only when independent style-lane ImageGen calls are unavailable. Prefer 4A.
+Use this only when independent style-lane ImageGen calls are unavailable. Prefer 4A. Do not use this as a workaround for ImageGen server errors or prompt failures if it would reduce content density, visual ambition, or option clarity; use the ImageGen retry policy and block after repeated failures instead.
 
 ```text
 Use case: productivity-visual
@@ -220,7 +221,48 @@ Requirements:
 3. Each option must express a different aesthetic family, not merely recolor a layout.
 4. Do not invent, delete, reorder, or rewrite content.
 5. Record fallback use in `style_brief.json.generation_mode=single_prompt_fallback` and explain why independent lanes were unavailable.
+6. If the fallback prompt has to be shortened, preserve the locked content and visual density floor; shortening is allowed only by removing duplicated prose, not by removing slide content or diagram requirements.
 ```
+
+## 4C. ImageGen Failure Retry Log
+
+Create or update this whenever an ImageGen style contact sheet or single-slide comp fails, times out, returns a service/server error, returns a wrong asset type, or requires prompt compression.
+
+```json
+{
+  "policy_ref": "style_brief.json.imagegen_failure_policy",
+  "attempts": [
+    {
+      "asset_id": "style-lane-A",
+      "stage": "style-contact-sheet | single-slide-comp",
+      "attempt_index": 1,
+      "failure_class": "server_error | timeout | prompt_too_large | wrong_asset_type | low_resolution | blur | other",
+      "original_prompt_path": "prompts/style-lane-A.txt",
+      "retry_prompt_path": "prompts/style-lane-A-retry-01.txt",
+      "compression_strategy": "removed duplicate source prose and repeated constraints only",
+      "compression_preserved": {
+        "locked_slide_order": true,
+        "slide_titles": true,
+        "core_claims": true,
+        "required_data": true,
+        "proof_object_intent": true,
+        "template_constraints": true,
+        "visual_density_floor": true,
+        "aesthetic_family": true
+      },
+      "removed_locked_content": false,
+      "reduced_content_density": false,
+      "reduced_visual_density": false,
+      "used_html_surrogate": false,
+      "switched_to_generic_ppt": false,
+      "next_action": "retry_imagegen | blocked_ask_user | regenerate_asset",
+      "final_status": "retry_pending | generated | blocked_imagegen_failure"
+    }
+  ]
+}
+```
+
+Gate rule: a retry log is not required when ImageGen succeeds on the first try. If a retry log exists, any entry that removes locked content, reduces content/visual density, uses HTML/browser output, switches to generic PPT, or marks a failed asset ready must fail the pipeline.
 
 ## 5. Selected Style To Single-Slide Comps
 

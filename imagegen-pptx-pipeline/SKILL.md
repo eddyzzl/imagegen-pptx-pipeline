@@ -37,6 +37,7 @@ Default reconstruction mode is **pixel-locked hybrid**, not native-only redraw: 
 - **No HTML or browser-rendered surrogate comps:** do not create HTML/CSS/SVG blueprints, browser screenshots, React pages, canvas renders, or ordinary static previews and then save them as `styles/*contact-sheet.png` or `slides/slide-XXX-comp.png`. Full pipeline visual options and per-slide comps must be generated through ImageGen/Image2. HTML is not an acceptable substitute for ImageGen at style or comp stages.
 - **Per-slide ImageGen comps are required:** after style selection, every output slide must have an approved `slides/slide-XXX-comp.png` generated as an independent 16:9 single-slide comp. A contact sheet alone is never enough to build the final PPTX.
 - **Image clarity is a hard gate:** ImageGen contact sheets and single-slide comps must request the highest available detail/resolution, crisp text edges, clean vector-like icons, sharp fine lines, and no blur/compression artifacts. Record `image_quality_policy` in `style_brief.json` and `visual_contract.json`. Every slide comp must have `clarity_review.status=approved` or explicit user-accepted risk before PPTX work.
+- **ImageGen retries fail closed:** ImageGen server errors, tool failures, timeout-like failures, or long-prompt failures are not permission to simplify the deck, reduce information density, switch to HTML/browser previews, or continue with ordinary PPT layouts. Retry prompts may remove transport noise and duplicated prose only; they must preserve locked slide order, titles, core claims, required data, proof-object intent, template constraints, visual density floor, and the assigned aesthetic family. After repeated failures, block and ask the user rather than marking an option ready.
 - **Images are iterated before PPTX:** subagents/reviewer roles review each single-slide comp. P0/P1 findings must trigger targeted ImageGen regeneration of that slide before PPTX authoring.
 - **PPTX is a pixel-locked hybrid reconstruction of the approved comp:** final slides must preserve the approved comp's appearance by default. Use full-slide or sliced comp backplates when native shape rebuilding would degrade the design, then overlay editable main text/numbers/simple shapes from `deck_spec.json`. Native-only redraw is allowed only when it visibly matches the comp or the user explicitly accepts a fidelity downgrade.
 - **Editable does not mean fully native:** complex diagrams, depth fields, textures, glow, glass, illustrations, screenshots, dense icons, and generated visual systems may remain image layers. Required editability applies to main titles, claims, body text, key numbers, labels, footers, and simple callouts unless a user-approved exception is documented.
@@ -380,6 +381,19 @@ Set `image_quality_policy` to request maximum available ImageGen clarity:
 - crisp text/icon/fine-line requirements included in every ImageGen prompt
 - blur rejection criteria recorded before any image is approved
 
+Set `imagegen_failure_policy` before any ImageGen call:
+
+- `fail_closed=true`
+- `max_retries_per_asset=2` by default unless the user asks for more attempts
+- `content_density_may_be_reduced=false`
+- `visual_complexity_may_be_reduced=false`
+- `html_surrogate_allowed=false`
+- `generic_ppt_fallback_allowed=false`
+- `prompt_compression_allowed=true` only for removing duplicated source prose, internal rationale, verbose citations, or repeated constraints
+- `prompt_compression_must_preserve=["locked slide order","slide titles","core claims","required data","proof-object intent","template constraints","visual density floor","aesthetic family"]`
+
+If an ImageGen call fails, write or update `imagegen_retry_log.json` with the asset ID, stage, failure class, prompt paths, compression strategy, preserved fields, and next action. Do not set any style lane, contact sheet, or slide comp to `ready_for_user`, `selected`, or `approved` unless the final successful ImageGen output passes the gate. A retry caused by ImageGen failure may shorten the wording, but it must not reduce slide count, remove data, flatten diagrams, lower visual ambition, or replace the image with HTML. If the same asset fails after the allowed retries, set the asset to `blocked_imagegen_failure`, write `pipeline_state.json`, and ask the user how to proceed.
+
 Style direction generation must be ImageGen-based. The preferred path is **parallel style lanes**:
 
 1. Create one lane per option under `style_lanes`, each with a distinct visual `aesthetic_family`, `visual_skin`, prompt path, and expected output path. Do not use content/story/proof-object labels as lane IDs, names, or premises.
@@ -461,7 +475,7 @@ For the selected style, call ImageGen once per slide. This phase is mandatory. E
 - Save ImageGen prompts under `prompts/slide-001-comp.txt`, `prompts/slide-002-comp.txt`, etc. Record generated image file paths in `deck_spec.json` and `visual_contract.json`.
 - Do not create `slides/*.html`, `styles/*.html`, `slides/blueprints/*`, or any browser-rendered stand-in for the comp. If an HTML/browser preview exists for a slide, it is a blocked surrogate and the slide must be regenerated through ImageGen.
 - Do not build PPTX until every target slide has a saved comp path, selected-style reference, template source slide if applicable, and review status.
-- If ImageGen fails or returns a contact sheet/grid instead of one slide, retry with the single-slide prompt. If it still fails, block or ask the user; do not proceed with a generic editable slide.
+- If ImageGen fails or returns a contact sheet/grid instead of one slide, retry with the single-slide prompt under `imagegen_failure_policy`. If it still fails, block or ask the user; do not proceed with a generic editable slide, HTML stand-in, low-density substitute, or native-only simplification.
 - If the single-slide comp looks flatter, simpler, or less designed than the selected contact sheet direction, regenerate it. Do not accept "clean but generic" comps unless the selected direction itself is deliberately plain.
 - If the single-slide comp is soft, blurry, low-resolution, compression-damaged, or has muddy icons/fine lines, regenerate it with a targeted clarity prompt before any PPTX reconstruction.
 

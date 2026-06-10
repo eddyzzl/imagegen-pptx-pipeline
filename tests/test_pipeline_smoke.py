@@ -44,6 +44,38 @@ def quality_policy() -> dict:
     }
 
 
+def failure_policy() -> dict:
+    return {
+        "policy_id": "imagegen-fail-closed-v1",
+        "enabled": True,
+        "fail_closed": True,
+        "max_retries_per_asset": 2,
+        "prompt_compression_allowed": True,
+        "prompt_compression_scope": [
+            "remove duplicated source prose",
+            "remove internal reasoning",
+            "remove repeated constraints",
+            "summarize verbose citations while preserving source IDs",
+        ],
+        "prompt_compression_must_preserve": [
+            "locked slide order",
+            "slide titles",
+            "core claims",
+            "required data",
+            "proof-object intent",
+            "template constraints",
+            "visual density floor",
+            "aesthetic family",
+        ],
+        "content_density_may_be_reduced": False,
+        "visual_complexity_may_be_reduced": False,
+        "html_surrogate_allowed": False,
+        "generic_ppt_fallback_allowed": False,
+        "block_after_repeated_failures": True,
+        "retry_log_path": "imagegen_retry_log.json",
+    }
+
+
 def clarity_review() -> dict:
     return {
         "status": "approved",
@@ -99,6 +131,9 @@ class PipelineSmokeTests(unittest.TestCase):
             self.assertTrue((workspace / "slide_intent_matrix.md").exists())
             self.assertTrue((workspace / "narrative_plan.json").exists())
             self.assertTrue((workspace / "reconstruction_manifest.json").exists())
+            self.assertTrue((workspace / "imagegen_retry_log.json").exists())
+            style_brief = json.loads((workspace / "style_brief.json").read_text(encoding="utf-8"))
+            self.assertTrue(style_brief["imagegen_failure_policy"]["fail_closed"])
 
     def test_init_workspace_accepts_reconstruction_only_mode(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -465,6 +500,8 @@ class PipelineSmokeTests(unittest.TestCase):
                 "content_strategy_locked": True,
                 "taste_guidance": taste_guidance(),
                 "image_quality_policy": quality_policy(),
+                "imagegen_failure_policy": failure_policy(),
+                "imagegen_retry_log": "imagegen_retry_log.json",
                 "selected_option": "A",
                 "selected_narrative_id": "narrative-a",
                 "narrative_lock": {
@@ -522,6 +559,10 @@ class PipelineSmokeTests(unittest.TestCase):
                     }
                 ],
             }
+            (workspace / "imagegen_retry_log.json").write_text(
+                json.dumps({"policy_ref": "style_brief.json.imagegen_failure_policy", "attempts": []}) + "\n",
+                encoding="utf-8",
+            )
             failures: list[str] = []
             gate_module.check_style_gate(
                 workspace,
@@ -534,6 +575,144 @@ class PipelineSmokeTests(unittest.TestCase):
             )
             self.assertTrue(any("content/narrative term" in item for item in failures))
             self.assertTrue(any("style label" in item for item in failures))
+
+    def test_style_gate_rejects_imagegen_retry_downgrade(self) -> None:
+        gate_module = load_gate_module()
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp)
+            (workspace / "styles" / "prompts").mkdir(parents=True)
+            (workspace / "styles" / "prompts" / "option-A.txt").write_text("original prompt", encoding="utf-8")
+            (workspace / "styles" / "prompts" / "option-A-retry-01.txt").write_text("retry prompt", encoding="utf-8")
+            (workspace / "styles" / "option-A-contact-sheet.png").write_bytes(fake_png(2400, 1350))
+            deck_spec = {
+                "deck": {"deck_profile": "internal-review", "slide_count": 1},
+                "slides": [{"slide_id": "slide-001", "title": "Title", "claim": "Claim"}],
+            }
+            fingerprint = gate_module.deck_spec_fingerprint(deck_spec)
+            invariance = {
+                "slide_count_ok": True,
+                "order_ok": True,
+                "claims_preserved": True,
+                "data_sources_preserved": True,
+                "proof_object_intent_preserved": True,
+                "selected_narrative_preserved": True,
+                "violations": [],
+            }
+            style_brief = {
+                "direction_count": 1,
+                "user_requested_count": 1,
+                "selection_mode": "ask_user",
+                "generation_mode": "parallel_style_lanes",
+                "deck_profile": "internal-review",
+                "style_variation_scope": "visual_aesthetic_only",
+                "content_strategy_locked": True,
+                "taste_guidance": taste_guidance(),
+                "image_quality_policy": quality_policy(),
+                "imagegen_failure_policy": failure_policy(),
+                "imagegen_retry_log": "imagegen_retry_log.json",
+                "selected_option": "A",
+                "selected_narrative_id": "narrative-a",
+                "narrative_lock": {
+                    "deck_spec_fingerprint": fingerprint,
+                    "locked_slide_count": 1,
+                    "locked_slide_order": ["slide-001"],
+                    "slide_intent_plan": "slide_intent_plan.json",
+                    "slide_intent_lock_state": "locked",
+                    "narrative_plan": "narrative_plan.json",
+                    "narrative_plan_lock_state": "locked",
+                    "slide_order_locked": True,
+                    "section_flow_locked": True,
+                    "titles_locked": True,
+                    "claims_locked": True,
+                    "required_data_locked": True,
+                    "core_proof_objects_locked": True,
+                },
+                "candidate_directions": [
+                    {
+                        "option_id": "A",
+                        "style_lane_id": "style-lane-A",
+                        "aesthetic_family": "premium-flat",
+                        "style_variation_scope": "visual_aesthetic_only",
+                        "name": "Premium flat",
+                        "premise": "Refined flat visual skin",
+                        "narrative_behavior": "same_story_reexpressed",
+                    }
+                ],
+                "style_lanes": [
+                    {
+                        "option_id": "A",
+                        "style_lane_id": "style-lane-A",
+                        "aesthetic_family": "premium-flat",
+                        "generator": "imagegen",
+                        "status": "selected",
+                        "prompt_path": "styles/prompts/option-A.txt",
+                        "output_path": "styles/option-A-contact-sheet.png",
+                        "narrative_lock_ref": fingerprint,
+                        "invariance_check": invariance,
+                    }
+                ],
+                "style_contact_sheets": [
+                    {
+                        "option_id": "A",
+                        "style_lane_id": "style-lane-A",
+                        "aesthetic_family": "premium-flat",
+                        "style_variation_scope": "visual_aesthetic_only",
+                        "generator": "imagegen",
+                        "path": "styles/option-A-contact-sheet.png",
+                        "prompt_path": "styles/prompts/option-A.txt",
+                        "narrative_lock_ref": fingerprint,
+                        "invariance_check": invariance,
+                    }
+                ],
+            }
+            retry_log = {
+                "policy_ref": "style_brief.json.imagegen_failure_policy",
+                "attempts": [
+                    {
+                        "asset_id": "style-lane-A",
+                        "stage": "style-contact-sheet",
+                        "attempt_index": 1,
+                        "failure_class": "server_error",
+                        "original_prompt_path": "styles/prompts/option-A.txt",
+                        "retry_prompt_path": "styles/prompts/option-A-retry-01.txt",
+                        "compression_strategy": "only kept template frame and six titles",
+                        "compression_preserved": {
+                            "locked_slide_order": True,
+                            "slide_titles": True,
+                            "core_claims": False,
+                            "required_data": False,
+                            "proof_object_intent": False,
+                            "template_constraints": True,
+                            "visual_density_floor": False,
+                            "aesthetic_family": True,
+                        },
+                        "removed_locked_content": True,
+                        "reduced_content_density": True,
+                        "reduced_visual_density": True,
+                        "used_html_surrogate": True,
+                        "switched_to_generic_ppt": True,
+                        "next_action": "blocked_ask_user",
+                        "final_status": "blocked_imagegen_failure",
+                    }
+                ],
+            }
+            (workspace / "imagegen_retry_log.json").write_text(
+                json.dumps(retry_log, ensure_ascii=False, indent=2) + "\n",
+                encoding="utf-8",
+            )
+            failures: list[str] = []
+            gate_module.check_style_gate(
+                workspace,
+                deck_spec,
+                {"lock_state": "locked"},
+                {"selected_narrative_id": "narrative-a"},
+                {"taste_guidance": taste_guidance()},
+                style_brief,
+                failures,
+            )
+            self.assertTrue(any("forbidden downgrade flag" in item for item in failures))
+            self.assertTrue(any("compression_preserved.core_claims" in item for item in failures))
+            self.assertTrue(any("unresolved but it is marked ready/selected" in item for item in failures))
 
     def test_reconstruction_only_before_pptx_skips_full_pipeline_gates(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

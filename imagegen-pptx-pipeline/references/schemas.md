@@ -456,6 +456,36 @@ Use after narrative lock and before style contact-sheet ImageGen calls.
       "compression artifacts around text or diagram strokes"
     ]
   },
+  "imagegen_failure_policy": {
+    "policy_id": "imagegen-fail-closed-v1",
+    "enabled": true,
+    "fail_closed": true,
+    "max_retries_per_asset": 2,
+    "prompt_compression_allowed": true,
+    "prompt_compression_scope": [
+      "remove duplicated source prose",
+      "remove internal reasoning",
+      "remove repeated constraints",
+      "summarize verbose citations while preserving source IDs"
+    ],
+    "prompt_compression_must_preserve": [
+      "locked slide order",
+      "slide titles",
+      "core claims",
+      "required data",
+      "proof-object intent",
+      "template constraints",
+      "visual density floor",
+      "aesthetic family"
+    ],
+    "content_density_may_be_reduced": false,
+    "visual_complexity_may_be_reduced": false,
+    "html_surrogate_allowed": false,
+    "generic_ppt_fallback_allowed": false,
+    "block_after_repeated_failures": true,
+    "retry_log_path": "imagegen_retry_log.json"
+  },
+  "imagegen_retry_log": "imagegen_retry_log.json",
   "diversity_axes": [
     "aesthetic family",
     "composition grammar",
@@ -570,7 +600,47 @@ Rules:
 - Built-in taste guidance should be reflected as portable PPT rules and anti-patterns. External taste sources are optional supplements only and must not be copied wholesale from frontend skills.
 - Template-following directions may not change protected template elements; they must differentiate inside allowed content zones.
 - `image_quality_policy` must request the highest available ImageGen detail/resolution. The policy is used by ImageGen prompts, visual-clarity review, and the `before-pptx` gate.
+- `imagegen_failure_policy` must fail closed. ImageGen server/tool failures, timeouts, or long-prompt failures may trigger prompt compression only if locked content, visual density, template constraints, proof-object intent, and aesthetic family are preserved. They may not trigger HTML/browser surrogates, generic PPT fallback, lower information density, or lower visual complexity.
+- `imagegen_retry_log.json` is optional only when every ImageGen call succeeds on the first try. If it exists and contains attempts, each attempt must record failure class, prompt paths, compression strategy, preserved fields, and final status. Any attempt that removed locked content, reduced content/visual density, used HTML/browser output, switched to generic PPT, or marked a failed asset ready blocks style selection.
 - HTML/CSS/browser blueprints, browser screenshots, React pages, canvas renders, PPTX previews, and hand-made static previews are invalid style/contact-sheet or single-slide comp sources.
+
+## imagegen_retry_log.json
+
+Use whenever ImageGen fails, times out, returns a server/service error, returns the wrong asset type, returns a low-resolution/blurry asset, or needs prompt compression.
+
+```json
+{
+  "policy_ref": "style_brief.json.imagegen_failure_policy",
+  "attempts": [
+    {
+      "asset_id": "style-lane-A",
+      "stage": "style-contact-sheet | single-slide-comp",
+      "attempt_index": 1,
+      "failure_class": "server_error | timeout | prompt_too_large | wrong_asset_type | low_resolution | blur | other",
+      "original_prompt_path": "prompts/style-lane-A.txt",
+      "retry_prompt_path": "prompts/style-lane-A-retry-01.txt",
+      "compression_strategy": "removed duplicate source prose and repeated constraints only",
+      "compression_preserved": {
+        "locked_slide_order": true,
+        "slide_titles": true,
+        "core_claims": true,
+        "required_data": true,
+        "proof_object_intent": true,
+        "template_constraints": true,
+        "visual_density_floor": true,
+        "aesthetic_family": true
+      },
+      "removed_locked_content": false,
+      "reduced_content_density": false,
+      "reduced_visual_density": false,
+      "used_html_surrogate": false,
+      "switched_to_generic_ppt": false,
+      "next_action": "retry_imagegen | blocked_ask_user | regenerate_asset",
+      "final_status": "retry_pending | generated | blocked_imagegen_failure"
+    }
+  ]
+}
+```
 
 ## template-frame-map.json
 

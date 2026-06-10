@@ -64,6 +64,36 @@ DEFAULT_IMAGE_QUALITY_POLICY = {
     ],
 }
 
+DEFAULT_IMAGEGEN_FAILURE_POLICY = {
+    "policy_id": "imagegen-fail-closed-v1",
+    "enabled": True,
+    "fail_closed": True,
+    "max_retries_per_asset": 2,
+    "prompt_compression_allowed": True,
+    "prompt_compression_scope": [
+        "remove duplicated source prose",
+        "remove internal reasoning",
+        "remove repeated constraints",
+        "summarize verbose citations while preserving source IDs",
+    ],
+    "prompt_compression_must_preserve": [
+        "locked slide order",
+        "slide titles",
+        "core claims",
+        "required data",
+        "proof-object intent",
+        "template constraints",
+        "visual density floor",
+        "aesthetic family",
+    ],
+    "content_density_may_be_reduced": False,
+    "visual_complexity_may_be_reduced": False,
+    "html_surrogate_allowed": False,
+    "generic_ppt_fallback_allowed": False,
+    "block_after_repeated_failures": True,
+    "retry_log_path": "imagegen_retry_log.json",
+}
+
 
 def slugify(value: str) -> str:
     value = value.strip().lower()
@@ -357,6 +387,12 @@ def main() -> int:
         "style_contact_sheets": [],
         "option_safety_status": "not_started",
         "image_quality_policy": DEFAULT_IMAGE_QUALITY_POLICY,
+        "imagegen_failure_policy": DEFAULT_IMAGEGEN_FAILURE_POLICY,
+        "imagegen_retry_log": "imagegen_retry_log.json",
+    }
+    imagegen_retry_log = {
+        "policy_ref": "style_brief.json.imagegen_failure_policy",
+        "attempts": [],
     }
     template_frame_map = {
         "source_pptx": "",
@@ -416,6 +452,7 @@ def main() -> int:
         "slide_intent_plan.json": json.dumps(slide_intent_plan, ensure_ascii=False, indent=2) + "\n",
         "narrative_plan.json": json.dumps(narrative_plan, ensure_ascii=False, indent=2) + "\n",
         "style_brief.json": json.dumps(style_brief, ensure_ascii=False, indent=2) + "\n",
+        "imagegen_retry_log.json": json.dumps(imagegen_retry_log, ensure_ascii=False, indent=2) + "\n",
         "template-frame-map.json": json.dumps(template_frame_map, ensure_ascii=False, indent=2) + "\n",
         "visual_contract.json": json.dumps(visual_contract, ensure_ascii=False, indent=2) + "\n",
         "reconstruction_manifest.json": json.dumps(reconstruction_manifest, ensure_ascii=False, indent=2) + "\n",
@@ -503,6 +540,7 @@ def main() -> int:
         "slide_intent_plan": str(workspace / "slide_intent_plan.json"),
         "narrative_plan": str(workspace / "narrative_plan.json"),
         "style_brief": str(workspace / "style_brief.json"),
+        "imagegen_retry_log": str(workspace / "imagegen_retry_log.json"),
         "template_frame_map": str(workspace / "template-frame-map.json"),
         "visual_contract": str(workspace / "visual_contract.json"),
         "reconstruction_manifest": str(workspace / "reconstruction_manifest.json"),
