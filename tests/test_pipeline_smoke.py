@@ -15,6 +15,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 SKILL_DIR = REPO_ROOT / "imagegen-pptx-pipeline"
 INIT_SCRIPT = SKILL_DIR / "scripts" / "init_pipeline_workspace.py"
 GATE_SCRIPT = SKILL_DIR / "scripts" / "check_pipeline_gates.py"
+COMP_ASSET_SCRIPT = SKILL_DIR / "scripts" / "check_imagegen_comp_asset.py"
 
 
 def load_gate_module():
@@ -155,6 +156,55 @@ def taste_guidance() -> dict:
 
 
 class PipelineSmokeTests(unittest.TestCase):
+    def test_imagegen_comp_prompt_preflight_requires_hard_quality_constraints(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            prompt = Path(tmp) / "slide-001-comp.txt"
+            prompt.write_text(
+                "Generate one true 4K 3840x2160 slide comp with highest detail. "
+                "The saved PNG must be at least 5 MiB / 5242880 bytes, use the same pixel dimensions "
+                "as every other page, and have crisp sharp text/icons/fine lines with no blur.",
+                encoding="utf-8",
+            )
+            completed = subprocess.run(
+                [sys.executable, str(COMP_ASSET_SCRIPT), "--prompt", str(prompt)],
+                check=False,
+                text=True,
+                capture_output=True,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+
+            prompt.write_text("Generate a nice slide.", encoding="utf-8")
+            completed = subprocess.run(
+                [sys.executable, str(COMP_ASSET_SCRIPT), "--prompt", str(prompt)],
+                check=False,
+                text=True,
+                capture_output=True,
+            )
+            self.assertNotEqual(completed.returncode, 0)
+            self.assertIn("3840 width", completed.stderr)
+            self.assertIn("5 MiB minimum", completed.stderr)
+
+    def test_imagegen_comp_asset_check_rejects_low_resolution_output(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            prompt = Path(tmp) / "slide-001-comp.txt"
+            image = Path(tmp) / "slide-001-comp.png"
+            prompt.write_text(
+                "Generate one true 4K 3840x2160 slide comp with highest detail. "
+                "The saved PNG must be at least 5 MiB / 5242880 bytes, use identical pixel dimensions "
+                "across the deck, and have crisp sharp text/icons/fine lines with no blur.",
+                encoding="utf-8",
+            )
+            image.write_bytes(fake_png(1672, 941, min_bytes=MIN_COMP_BYTES))
+            completed = subprocess.run(
+                [sys.executable, str(COMP_ASSET_SCRIPT), "--prompt", str(prompt), "--image", str(image)],
+                check=False,
+                text=True,
+                capture_output=True,
+            )
+            self.assertNotEqual(completed.returncode, 0)
+            self.assertIn("3840x2160", completed.stderr)
+            self.assertIn("1672x941", completed.stderr)
+
     def test_init_workspace_creates_slide_intent_artifacts(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             result = run_json(

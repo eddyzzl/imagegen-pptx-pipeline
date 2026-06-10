@@ -273,6 +273,9 @@ Asset type: one high-resolution 16:9 PPT slide visual comp
 Primary request:
 I selected <Option X>. Based on that PPT contact sheet, continue using /imagegen and generate slide <slide_id> as one independent ultra-sharp high-resolution 16:9 PPT visual comp. Use the highest detail/resolution available. The saved image must be true 4K 16:9 (`3840x2160`) or higher, at least 5 MiB, and use the exact same pixel dimensions as every other single-slide comp in this deck.
 
+Preflight contract:
+Before calling /imagegen, this prompt must pass `scripts/check_imagegen_comp_asset.py --prompt <prompt-path>`. Keep these constraints explicit: true 4K `3840x2160` or higher, at least 5 MiB saved file size, same/identical pixel dimensions across the deck, highest/maximum detail, crisp sharp text/icons/fine lines, and no blur/compression artifacts. If the returned image is lower than 3840x2160, for example 1672x941, reject and regenerate.
+
 Execution ownership:
 This is part of a main-agent serial ImageGen pass. Do not delegate final per-slide ImageGen calls to page-owning subagents. Use subagents only for prompt notes or review. Preserve the same `comp_style_lock` from slide to slide.
 
