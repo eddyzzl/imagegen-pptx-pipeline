@@ -45,9 +45,38 @@ DEFAULT_IMAGE_QUALITY_POLICY = {
     "policy_id": "imagegen-max-clarity-v1",
     "enabled": True,
     "prompt_detail_level": "highest_available",
+    "preferred_single_slide_canvas_px": {"width": 3840, "height": 2160},
     "requested_single_slide_canvas_px": {"width": 3840, "height": 2160},
-    "minimum_acceptable_comp_px": {"width": 3840, "height": 2160},
-    "minimum_acceptable_comp_bytes": 5 * 1024 * 1024,
+    "minimum_acceptable_comp_px": {"width": 1920, "height": 1080},
+    "minimum_acceptable_comp_bytes": 1 * 1024 * 1024,
+    "resolution_fallback_policy": {
+        "enabled": True,
+        "deck_wide_tier_lock": True,
+        "do_not_retry_forever": True,
+        "record_log_path": "imagegen_resolution_fallback_log.json",
+        "tiers": [
+            {
+                "tier": "4k",
+                "minimum_px": {"width": 3840, "height": 2160},
+                "minimum_bytes": 5 * 1024 * 1024,
+                "max_attempts": 2,
+            },
+            {
+                "tier": "2k",
+                "minimum_px": {"width": 2560, "height": 1440},
+                "minimum_bytes": 2 * 1024 * 1024,
+                "max_attempts": 1,
+            },
+            {
+                "tier": "1080p",
+                "minimum_px": {"width": 1920, "height": 1080},
+                "minimum_bytes": 1 * 1024 * 1024,
+                "max_attempts": 1,
+            },
+        ],
+        "never_accept_below_px": {"width": 1920, "height": 1080},
+        "fallback_requires_reason": True,
+    },
     "minimum_acceptable_contact_sheet_px": {"width": 2400, "height": 1350},
     "prompt_requires_crisp_text_and_icons": True,
     "review_required_before_pptx": True,
@@ -419,6 +448,12 @@ def main() -> int:
         "policy_ref": "style_brief.json.imagegen_failure_policy",
         "attempts": [],
     }
+    imagegen_resolution_fallback_log = {
+        "policy_ref": "style_brief.json.image_quality_policy.resolution_fallback_policy",
+        "attempts": [],
+        "selected_deck_wide_tier": "",
+        "notes": "",
+    }
     template_frame_map = {
         "source_pptx": "",
         "template_contact_sheet": "",
@@ -482,6 +517,12 @@ def main() -> int:
         "narrative_plan.json": json.dumps(narrative_plan, ensure_ascii=False, indent=2) + "\n",
         "style_brief.json": json.dumps(style_brief, ensure_ascii=False, indent=2) + "\n",
         "imagegen_retry_log.json": json.dumps(imagegen_retry_log, ensure_ascii=False, indent=2) + "\n",
+        "imagegen_resolution_fallback_log.json": json.dumps(
+            imagegen_resolution_fallback_log,
+            ensure_ascii=False,
+            indent=2,
+        )
+        + "\n",
         "template-frame-map.json": json.dumps(template_frame_map, ensure_ascii=False, indent=2) + "\n",
         "visual_contract.json": json.dumps(visual_contract, ensure_ascii=False, indent=2) + "\n",
         "reconstruction_manifest.json": json.dumps(reconstruction_manifest, ensure_ascii=False, indent=2) + "\n",

@@ -162,11 +162,13 @@ class PipelineSmokeTests(unittest.TestCase):
             prompt.write_text(
                 "Generate one true 4K 3840x2160 slide comp with highest detail. "
                 "The saved PNG must be at least 5 MiB / 5242880 bytes, use the same pixel dimensions "
-                "as every other page, and have crisp sharp text/icons/fine lines with no blur.",
+                "as every other page, and have crisp sharp text/icons/fine lines with no blur. "
+                "If the service cannot produce 4K, fallback to 2K 2560x1440, then 1080p 1920x1080; "
+                "do not retry forever and keep the output as high as possible.",
                 encoding="utf-8",
             )
             completed = subprocess.run(
-                [sys.executable, str(COMP_ASSET_SCRIPT), "--prompt", str(prompt)],
+                [sys.executable, str(COMP_ASSET_SCRIPT), "--prompt", str(prompt), "--require-fallback-policy"],
                 check=False,
                 text=True,
                 capture_output=True,
@@ -182,7 +184,53 @@ class PipelineSmokeTests(unittest.TestCase):
             )
             self.assertNotEqual(completed.returncode, 0)
             self.assertIn("3840 width", completed.stderr)
-            self.assertIn("5 MiB minimum", completed.stderr)
+            self.assertIn("tier file-size minimum", completed.stderr)
+
+            prompt.write_text(
+                "Generate one true 4K 3840x2160 slide comp with highest detail. "
+                "The saved PNG must be at least 5 MiB / 5242880 bytes, use the same pixel dimensions "
+                "as every other page, and have crisp sharp text/icons/fine lines with no blur.",
+                encoding="utf-8",
+            )
+            completed = subprocess.run(
+                [sys.executable, str(COMP_ASSET_SCRIPT), "--prompt", str(prompt), "--require-fallback-policy"],
+                check=False,
+                text=True,
+                capture_output=True,
+            )
+            self.assertNotEqual(completed.returncode, 0)
+            self.assertIn("2K fallback", completed.stderr)
+            self.assertIn("1080p fallback", completed.stderr)
+
+    def test_imagegen_comp_asset_check_accepts_2k_fallback_for_4k_request(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            prompt = Path(tmp) / "slide-001-comp.txt"
+            image = Path(tmp) / "slide-001-comp.png"
+            prompt.write_text(
+                "Generate one true 4K 3840x2160 slide comp with highest detail. "
+                "The saved PNG must be at least 5 MiB / 5242880 bytes, use identical pixel dimensions "
+                "across the deck, and have crisp sharp text/icons/fine lines with no blur. "
+                "If 4K is unavailable, fallback to 2K 2560x1440, then 1080p 1920x1080; "
+                "do not retry forever and keep it as high as possible.",
+                encoding="utf-8",
+            )
+            image.write_bytes(fake_png(2560, 1440, min_bytes=2 * 1024 * 1024))
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    str(COMP_ASSET_SCRIPT),
+                    "--prompt",
+                    str(prompt),
+                    "--image",
+                    str(image),
+                    "--allow-fallback",
+                ],
+                check=False,
+                text=True,
+                capture_output=True,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            self.assertIn("PASS_WITH_FALLBACK tier=2k", completed.stdout)
 
     def test_imagegen_comp_asset_check_rejects_low_resolution_output(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -191,18 +239,28 @@ class PipelineSmokeTests(unittest.TestCase):
             prompt.write_text(
                 "Generate one true 4K 3840x2160 slide comp with highest detail. "
                 "The saved PNG must be at least 5 MiB / 5242880 bytes, use identical pixel dimensions "
-                "across the deck, and have crisp sharp text/icons/fine lines with no blur.",
+                "across the deck, and have crisp sharp text/icons/fine lines with no blur. "
+                "If 4K is unavailable, fallback to 2K 2560x1440, then 1080p 1920x1080; "
+                "do not retry forever and keep it as high as possible.",
                 encoding="utf-8",
             )
             image.write_bytes(fake_png(1672, 941, min_bytes=MIN_COMP_BYTES))
             completed = subprocess.run(
-                [sys.executable, str(COMP_ASSET_SCRIPT), "--prompt", str(prompt), "--image", str(image)],
+                [
+                    sys.executable,
+                    str(COMP_ASSET_SCRIPT),
+                    "--prompt",
+                    str(prompt),
+                    "--image",
+                    str(image),
+                    "--allow-fallback",
+                ],
                 check=False,
                 text=True,
                 capture_output=True,
             )
             self.assertNotEqual(completed.returncode, 0)
-            self.assertIn("3840x2160", completed.stderr)
+            self.assertIn("1920x1080", completed.stderr)
             self.assertIn("1672x941", completed.stderr)
 
     def test_init_workspace_creates_slide_intent_artifacts(self) -> None:

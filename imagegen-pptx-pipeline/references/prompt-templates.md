@@ -271,10 +271,10 @@ Use case: productivity-visual
 Asset type: one high-resolution 16:9 PPT slide visual comp
 
 Primary request:
-I selected <Option X>. Based on that PPT contact sheet, continue using /imagegen and generate slide <slide_id> as one independent ultra-sharp high-resolution 16:9 PPT visual comp. Use the highest detail/resolution available. The saved image must be true 4K 16:9 (`3840x2160`) or higher, at least 5 MiB, and use the exact same pixel dimensions as every other single-slide comp in this deck.
+I selected <Option X>. Based on that PPT contact sheet, continue using /imagegen and generate slide <slide_id> as one independent ultra-sharp high-resolution 16:9 PPT visual comp. Use the highest detail/resolution available. Request true 4K 16:9 (`3840x2160`) first, at least 5 MiB. If the service cannot produce 4K after configured attempts, fall back to 2K (`2560x1440`, at least 2 MiB), then 1080p (`1920x1080`, at least 1 MiB). Use the exact same pixel dimensions as every other approved single-slide comp in this deck.
 
 Preflight contract:
-Before calling /imagegen, this prompt must pass `scripts/check_imagegen_comp_asset.py --prompt <prompt-path>`. Keep these constraints explicit: true 4K `3840x2160` or higher, at least 5 MiB saved file size, same/identical pixel dimensions across the deck, highest/maximum detail, crisp sharp text/icons/fine lines, and no blur/compression artifacts. If the returned image is lower than 3840x2160, for example 1672x941, reject and regenerate.
+Before calling /imagegen, this prompt must pass `scripts/check_imagegen_comp_asset.py --prompt <prompt-path> --require-fallback-policy`. Keep these constraints explicit: true 4K `3840x2160` first, 2K `2560x1440` fallback, 1080p `1920x1080` final floor, tier file-size minimums, same/identical pixel dimensions across the deck, highest/maximum detail, crisp sharp text/icons/fine lines, no blur/compression artifacts, and no infinite retry loop. If the returned image is lower than 1920x1080, for example 1672x941, reject and regenerate.
 
 Execution ownership:
 This is part of a main-agent serial ImageGen pass. Do not delegate final per-slide ImageGen calls to page-owning subagents. Use subagents only for prompt notes or review. Preserve the same `comp_style_lock` from slide to slide.
@@ -306,7 +306,7 @@ Requirements:
 8. Major title, claim, key numbers, chart labels, and page number should be legible.
 9. Avoid garbled text, pseudo-Chinese, repeated page numbers, wrong page numbers, missing page numbers, and misspellings.
 10. If tiny text is hard to render exactly, preserve the layout relationship and leave final exact text to PPTX reconstruction from `deck_spec.json`.
-11. The rendered image must be crisp at full size: true 4K 16:9 (`3840x2160`) or higher, sharp title edges, readable key numbers, clean icon strokes, clear chart/diagram lines, high-contrast labels, and no soft-focus blur, glow over text, or compression artifacts.
+11. The rendered image must be crisp at full size. Prefer true 4K 16:9 (`3840x2160`) or higher; fallback only to 2K (`2560x1440`) or 1080p (`1920x1080`) when the service cannot produce 4K. Keep sharp title edges, readable key numbers, clean icon strokes, clear chart/diagram lines, high-contrast labels, and no soft-focus blur, glow over text, or compression artifacts.
 12. Avoid unreadable microtext. Prefer fewer/larger labels, abbreviated labels, callout grouping, or leaving exact tiny copy to PPTX reconstruction rather than producing blurry pseudo-text.
 13. The comp should look like a finished slide, not a wireframe or design note.
 14. Output only the high-resolution single-slide image for this page. Do not generate PPTX in this phase.
@@ -314,7 +314,7 @@ Requirements:
 16. Use a slide-specific visual archetype: system map, maturity arc, loop, funnel, radial, timeline, swimlane, matrix, scorecard, dashboard, process chain, comparison, or title composition. Make the archetype obvious.
 17. Balance editability with visual richness: keep main text regions clean enough to rebuild later, but allow complex depth, background, icon, and diagram layers that can be retained as cropped image assets in PPTX.
 18. Save this generated image as `slides/slide-XXX-comp.png`. Do not use a PPTX preview, template screenshot, output contact sheet, or final render as this comp.
-19. The saved file must be at least 5 MiB. If the file is smaller, lower than 3840x2160, or uses a different pixel size from the rest of the deck, regenerate before review.
+19. The saved file must meet the active tier minimum: 4K at least 5 MiB, 2K at least 2 MiB, or 1080p at least 1 MiB. If the file is lower than 1920x1080, below the tier file-size minimum, or uses a different pixel size from the rest of the deck, regenerate before review.
 ```
 
 ## 6. Reviewer Iteration Prompt

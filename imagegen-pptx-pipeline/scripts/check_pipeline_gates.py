@@ -407,11 +407,51 @@ def check_image_quality_policy(policy, failures: list[str], owner: str) -> dict:
     requested = policy.get("requested_single_slide_canvas_px") or {}
     if safe_int(requested.get("width")) < 3840 or safe_int(requested.get("height")) < 2160:
         failures.append(f"{owner} image_quality_policy.requested_single_slide_canvas_px must target at least 3840x2160")
+    preferred = policy.get("preferred_single_slide_canvas_px") or requested
+    if safe_int(preferred.get("width")) < 3840 or safe_int(preferred.get("height")) < 2160:
+        failures.append(f"{owner} image_quality_policy.preferred_single_slide_canvas_px must be at least 3840x2160")
+    fallback_policy = policy.get("resolution_fallback_policy") or {}
+    fallback_enabled = isinstance(fallback_policy, dict) and fallback_policy.get("enabled") is True
     minimum = policy.get("minimum_acceptable_comp_px") or {}
-    if safe_int(minimum.get("width")) < 3840 or safe_int(minimum.get("height")) < 2160:
-        failures.append(f"{owner} image_quality_policy.minimum_acceptable_comp_px must be at least 3840x2160")
-    if safe_int(policy.get("minimum_acceptable_comp_bytes")) < 5 * 1024 * 1024:
-        failures.append(f"{owner} image_quality_policy.minimum_acceptable_comp_bytes must be at least 5242880")
+    minimum_floor = (1920, 1080) if fallback_enabled else (3840, 2160)
+    if safe_int(minimum.get("width")) < minimum_floor[0] or safe_int(minimum.get("height")) < minimum_floor[1]:
+        failures.append(
+            f"{owner} image_quality_policy.minimum_acceptable_comp_px must be at least "
+            f"{minimum_floor[0]}x{minimum_floor[1]}"
+        )
+    minimum_bytes_floor = 1 * 1024 * 1024 if fallback_enabled else 5 * 1024 * 1024
+    if safe_int(policy.get("minimum_acceptable_comp_bytes")) < minimum_bytes_floor:
+        failures.append(
+            f"{owner} image_quality_policy.minimum_acceptable_comp_bytes must be at least {minimum_bytes_floor}"
+        )
+    if fallback_enabled:
+        if fallback_policy.get("deck_wide_tier_lock") is not True:
+            failures.append(f"{owner} resolution_fallback_policy.deck_wide_tier_lock must be true")
+        if fallback_policy.get("do_not_retry_forever") is not True:
+            failures.append(f"{owner} resolution_fallback_policy.do_not_retry_forever must be true")
+        tiers = fallback_policy.get("tiers") or []
+        tier_map = {tier.get("tier"): tier for tier in tiers if isinstance(tier, dict)}
+        expected_tiers = {
+            "4k": (3840, 2160, 5 * 1024 * 1024),
+            "2k": (2560, 1440, 2 * 1024 * 1024),
+            "1080p": (1920, 1080, 1 * 1024 * 1024),
+        }
+        for tier_name, (width, height, min_bytes) in expected_tiers.items():
+            tier = tier_map.get(tier_name) or {}
+            tier_min = tier.get("minimum_px") or {}
+            if safe_int(tier_min.get("width")) < width or safe_int(tier_min.get("height")) < height:
+                failures.append(
+                    f"{owner} resolution_fallback_policy.tiers.{tier_name}.minimum_px must be at least {width}x{height}"
+                )
+            if safe_int(tier.get("minimum_bytes")) < min_bytes:
+                failures.append(
+                    f"{owner} resolution_fallback_policy.tiers.{tier_name}.minimum_bytes must be at least {min_bytes}"
+                )
+            if safe_int(tier.get("max_attempts")) < 1:
+                failures.append(f"{owner} resolution_fallback_policy.tiers.{tier_name}.max_attempts must be at least 1")
+        never_below = fallback_policy.get("never_accept_below_px") or {}
+        if safe_int(never_below.get("width")) < 1920 or safe_int(never_below.get("height")) < 1080:
+            failures.append(f"{owner} resolution_fallback_policy.never_accept_below_px must be at least 1920x1080")
     contact_min = policy.get("minimum_acceptable_contact_sheet_px") or {}
     if safe_int(contact_min.get("width")) < 2400 or safe_int(contact_min.get("height")) < 1350:
         failures.append(f"{owner} image_quality_policy.minimum_acceptable_contact_sheet_px must be at least 2400x1350")
@@ -958,6 +998,9 @@ def check_visual_contract(workspace: Path, deck_spec: dict, visual_contract: dic
     minimum_width = safe_int(minimum_px.get("width"))
     minimum_height = safe_int(minimum_px.get("height"))
     minimum_bytes = safe_int(quality_policy.get("minimum_acceptable_comp_bytes"))
+    preferred_px = quality_policy.get("preferred_single_slide_canvas_px") or quality_policy.get("requested_single_slide_canvas_px") or {}
+    preferred_width = safe_int(preferred_px.get("width")) or 3840
+    preferred_height = safe_int(preferred_px.get("height")) or 2160
     check_no_html_surrogates(workspace, failures)
     if not visual_contract.get("selected_style"):
         failures.append("visual_contract.json selected_style is empty")
@@ -1027,6 +1070,7 @@ def check_visual_contract(workspace: Path, deck_spec: dict, visual_contract: dic
                     "visual_contract.json comp_style_lock.consistency_requirements must include at least 4 rules"
                 )
     expected_comp_size: tuple[int, int] | None = None
+    resolution_fallback_used = False
     for idx, slide in enumerate(slides, 1):
         comp = slide.get("comp_path") or slide.get("approved_comp_path")
         path = require_file(workspace, comp, f"slide {idx:03d} approved comp", failures)
@@ -1053,6 +1097,8 @@ def check_visual_contract(workspace: Path, deck_spec: dict, visual_contract: dic
             actual_bytes = 0
         if actual_width and actual_height:
             actual_size = (actual_width, actual_height)
+            if not workflow_reconstruction_mode and (actual_width < preferred_width or actual_height < preferred_height):
+                resolution_fallback_used = True
             if expected_comp_size is None:
                 expected_comp_size = actual_size
             elif actual_size != expected_comp_size:
@@ -1099,6 +1145,8 @@ def check_visual_contract(workspace: Path, deck_spec: dict, visual_contract: dic
             height = safe_int(dimensions.get("height"))
             recorded_bytes = safe_int(clarity.get("image_file_size_bytes") or clarity.get("file_size_bytes"))
             if width and height and minimum_width and minimum_height:
+                if not workflow_reconstruction_mode and (width < preferred_width or height < preferred_height):
+                    resolution_fallback_used = True
                 if width < minimum_width or height < minimum_height:
                     failures.append(
                         f"slide {idx:03d} clarity_review.image_dimensions_px must be at least "
@@ -1202,6 +1250,19 @@ def check_visual_contract(workspace: Path, deck_spec: dict, visual_contract: dic
                 failures.append(
                     f"slide {idx:03d} editable_overlay_plan must be an object with visible native overlay coverage"
                 )
+    if resolution_fallback_used and not workflow_reconstruction_mode:
+        fallback_log = quality_policy.get("resolution_fallback_policy", {}).get(
+            "record_log_path",
+            "imagegen_resolution_fallback_log.json",
+        )
+        fallback_log_path = require_file(workspace, fallback_log, "ImageGen resolution fallback log", failures)
+        if fallback_log_path:
+            fallback_payload = load_json(fallback_log_path, failures)
+            attempts = fallback_payload.get("attempts") if isinstance(fallback_payload, dict) else None
+            if not isinstance(attempts, list) or not attempts:
+                failures.append("ImageGen resolution fallback log must contain at least one attempt when fallback is used")
+            if not fallback_payload.get("selected_deck_wide_tier"):
+                failures.append("ImageGen resolution fallback log missing selected_deck_wide_tier")
 
 
 def check_reviews(workspace: Path, deck_spec: dict, failures: list[str]) -> None:
