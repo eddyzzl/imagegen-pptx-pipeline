@@ -948,7 +948,7 @@ def check_reconstruction_manifest(
 def check_visual_contract(workspace: Path, deck_spec: dict, visual_contract: dict, failures: list[str]) -> None:
     expected_count = deck_spec.get("deck", {}).get("slide_count") or len(deck_spec.get("slides", []))
     slides = visual_contract.get("slides", [])
-    reconstruction_mode = is_reconstruction_mode(deck_spec.get("deck", {}).get("mode", ""))
+    workflow_reconstruction_mode = is_reconstruction_mode(deck_spec.get("deck", {}).get("mode", ""))
     quality_policy = check_image_quality_policy(
         visual_contract.get("image_quality_policy"),
         failures,
@@ -962,7 +962,7 @@ def check_visual_contract(workspace: Path, deck_spec: dict, visual_contract: dic
     if not visual_contract.get("selected_style"):
         failures.append("visual_contract.json selected_style is empty")
     contact_sheet = visual_contract.get("contact_sheet")
-    if not contact_sheet and not reconstruction_mode:
+    if not contact_sheet and not workflow_reconstruction_mode:
         failures.append("visual_contract.json contact_sheet is empty")
     elif contact_sheet and require_file(workspace, contact_sheet, "selected style contact sheet", failures):
         pass
@@ -980,6 +980,52 @@ def check_visual_contract(workspace: Path, deck_spec: dict, visual_contract: dic
         failures.append(
             f"visual_contract.json has {len(slides)} slides but deck_spec expects {expected_count}"
         )
+    if not workflow_reconstruction_mode:
+        comp_generation_mode = visual_contract.get("comp_generation_mode")
+        parallel_used = visual_contract.get("parallel_page_subagents_used") is True
+        parallel_accepted = visual_contract.get("explicit_parallel_comp_generation_accepted") is True
+        if comp_generation_mode != "main_agent_serial_imagegen" and not parallel_accepted:
+            failures.append(
+                "visual_contract.json comp_generation_mode must be main_agent_serial_imagegen "
+                "unless explicit_parallel_comp_generation_accepted is true"
+            )
+        if parallel_used and not parallel_accepted:
+            failures.append(
+                "visual_contract.json parallel_page_subagents_used requires "
+                "explicit_parallel_comp_generation_accepted=true"
+            )
+        comp_style_lock = visual_contract.get("comp_style_lock")
+        if not isinstance(comp_style_lock, dict):
+            failures.append("visual_contract.json comp_style_lock must be an object")
+            comp_style_lock = {}
+        else:
+            if comp_style_lock.get("generation_owner") != "main_agent" and not parallel_accepted:
+                failures.append(
+                    "visual_contract.json comp_style_lock.generation_owner must be main_agent "
+                    "unless explicit parallel page-subagent generation was accepted"
+                )
+            if comp_style_lock.get("chrome_locked") is not True:
+                failures.append("visual_contract.json comp_style_lock.chrome_locked must be true")
+            locked_elements = {
+                str(item).strip().lower()
+                for item in comp_style_lock.get("locked_chrome_elements", [])
+                if str(item).strip()
+            }
+            if not {"logo", "footer", "page number"}.issubset(locked_elements):
+                failures.append(
+                    "visual_contract.json comp_style_lock.locked_chrome_elements must include "
+                    "logo, footer, and page number"
+                )
+            if not locked_elements.intersection({"header rule", "section label", "title furniture"}):
+                failures.append(
+                    "visual_contract.json comp_style_lock.locked_chrome_elements must include "
+                    "a header/section/title treatment"
+                )
+            requirements = comp_style_lock.get("consistency_requirements", [])
+            if not isinstance(requirements, list) or len(requirements) < 4:
+                failures.append(
+                    "visual_contract.json comp_style_lock.consistency_requirements must include at least 4 rules"
+                )
     expected_comp_size: tuple[int, int] | None = None
     for idx, slide in enumerate(slides, 1):
         comp = slide.get("comp_path") or slide.get("approved_comp_path")
@@ -1069,23 +1115,37 @@ def check_visual_contract(workspace: Path, deck_spec: dict, visual_contract: dic
             elif minimum_bytes:
                 failures.append(f"slide {idx:03d} clarity_review.image_file_size_bytes is missing")
         source_type = slide.get("image_source_type") or clarity.get("image_source_type")
-        if not reconstruction_mode and source_type != "imagegen":
+        if not workflow_reconstruction_mode and source_type != "imagegen":
             failures.append(f"slide {idx:03d} image_source_type must be imagegen in generated-deck mode")
+        if not workflow_reconstruction_mode:
+            continuity = slide.get("style_continuity_review")
+            if not isinstance(continuity, dict):
+                failures.append(f"slide {idx:03d} missing style_continuity_review in visual_contract.json")
+                continuity = {}
+            else:
+                if continuity.get("status") != "approved":
+                    failures.append(f"slide {idx:03d} style_continuity_review.status must be approved")
+                if continuity.get("matches_comp_style_lock") is not True:
+                    failures.append(f"slide {idx:03d} style_continuity_review.matches_comp_style_lock must be true")
+                if continuity.get("page_chrome_consistent") is not True:
+                    failures.append(f"slide {idx:03d} style_continuity_review.page_chrome_consistent must be true")
+                if continuity.get("recurring_elements_consistent") is not True:
+                    failures.append(f"slide {idx:03d} style_continuity_review.recurring_elements_consistent must be true")
         if slide.get("rendered_from_html") is True or slide.get("browser_rendered") is True:
             failures.append(f"slide {idx:03d} approved comp cannot be rendered from HTML/browser output")
-        reconstruction_mode = slide.get("reconstruction_mode")
-        if reconstruction_mode not in {"pixel_locked_hybrid", "sliced_hybrid", "native_trace_hybrid", "native_rebuild"}:
+        slide_reconstruction_mode = slide.get("reconstruction_mode")
+        if slide_reconstruction_mode not in {"pixel_locked_hybrid", "sliced_hybrid", "native_trace_hybrid", "native_rebuild"}:
             failures.append(
                 f"slide {idx:03d} reconstruction_mode must be pixel_locked_hybrid, sliced_hybrid, native_trace_hybrid, or native_rebuild"
             )
-        if reconstruction_mode == "native_rebuild" and visual_contract.get("explicit_downgrade_accepted") is not True:
+        if slide_reconstruction_mode == "native_rebuild" and visual_contract.get("explicit_downgrade_accepted") is not True:
             comparison = slide.get("comparison_gate", {})
             if comparison.get("comp_match_status") != "approved":
                 failures.append(
                     f"slide {idx:03d} native_rebuild requires approved comp_match_status or explicit downgrade acceptance"
                 )
         backplate = slide.get("comp_backplate", {})
-        if reconstruction_mode in {"pixel_locked_hybrid", "sliced_hybrid"}:
+        if slide_reconstruction_mode in {"pixel_locked_hybrid", "sliced_hybrid"}:
             if not isinstance(backplate, dict):
                 failures.append(f"slide {idx:03d} comp_backplate must be an object")
                 backplate = {}
@@ -1095,7 +1155,7 @@ def check_visual_contract(workspace: Path, deck_spec: dict, visual_contract: dic
             require_file(workspace, backplate_path, f"slide {idx:03d} comp backplate", failures)
             if backplate.get("insert_first") is not True:
                 failures.append(f"slide {idx:03d} comp_backplate.insert_first must be true")
-        if reconstruction_mode == "native_trace_hybrid":
+        if slide_reconstruction_mode == "native_trace_hybrid":
             trace_plan = slide.get("native_trace_plan")
             if not isinstance(trace_plan, dict):
                 failures.append(f"slide {idx:03d} native_trace_plan must be an object")

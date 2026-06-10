@@ -2,6 +2,8 @@
 
 Use subagents only when the user explicitly asks for collaborative/subagent review or approves it. If subagents are unavailable, run the roles sequentially yourself.
 
+Subagents must not independently generate final single-slide ImageGen comps (`slides/slide-XXX-comp.png`) in generated-deck mode. Final comp generation is a main-agent serial ImageGen pass so recurring chrome stays consistent. Subagents may draft prompt notes, review source material, review generated comps, or generate independent full-deck style contact sheets during the style-lane phase. Parallel page-level comp generation is allowed only if the user explicitly accepts the style-drift risk.
+
 Do not pass hidden conclusions to reviewers. Pass raw artifacts: `deck_spec.json`, `design_system.json`, `source_notes.md`, `content_review.md`, `user_decisions.md`, contact sheets, slide comps, PPTX preview PNGs, and the exact role prompt.
 
 ## Stage Matrix
@@ -15,7 +17,7 @@ Use only the roles needed for the current phase.
 | narrative treatment selection | `narrative-treatment-strategist`, `content-integrity`, `source-data-verifier`, `audience-advocate`, `template-fidelity` when a template exists | no visual style exploration until narrative_matrix.md is reviewed, one narrative is selected, and narrative_plan.json is locked |
 | style count/direction planning | `design-diversity`, `taste-direction`, `style-lane-art-director`, `image-art-director`, `template-fidelity` when a template exists | no contact sheet until directions have materially different aesthetic families, profile fit, built-in taste compliance, narrative lock, and template-safe constraints |
 | style contact sheet selection | light P0 safety screen before user choice; after choice use `narrative-invariance`, `style-coherence`, `color-brand`, `executive-polish`, `design-diversity`, `taste-direction`, `image-art-director`, `template-fidelity` when a template exists | no single-slide comps until selected direction has no P0/P1 blockers |
-| single-slide comp review | `narrative-invariance`, `content-integrity`, `text-typography`, `visual-fidelity`, `visual-clarity`, `image-art-director`, `layout-pptx-feasibility`, `chart-logic`, `asset-authenticity`, `template-fidelity` when a template exists, `accessibility-readability` | no visual contract or PPTX build until P0/P1 comp blockers resolved |
+| single-slide comp review | `narrative-invariance`, `content-integrity`, `text-typography`, `visual-fidelity`, `style-continuity`, `visual-clarity`, `image-art-director`, `layout-pptx-feasibility`, `chart-logic`, `asset-authenticity`, `template-fidelity` when a template exists, `accessibility-readability` | no visual contract or PPTX build until P0/P1 comp blockers resolved |
 | visual contract lock | `visual-fidelity`, `layout-pptx-feasibility`, `chart-logic`, `template-fidelity` when a template exists | no PPTX build until each slide has an approved comp, comp-faithful visual archetype, template mapping, reconstruction mode, comp backplate plan, text mask plan, editable overlay plan, and native reconstruction plan |
 | reconstruction-only input lock | `reconstruction-input-verifier`, `text-typography`, `layout-pptx-feasibility`, `template-fidelity` when a template exists | no PPTX build until every page has a source image, text source status, pixel_locked_hybrid visual contract, and page-sharded output plan |
 | page-sharded PPTX reconstruction | `pptx-reconstruction-fidelity`, `visual-fidelity`, `visual-clarity`, `text-typography`, `layout-pptx-feasibility`, `accessibility-readability`, `template-fidelity` when a template exists | no merge until each `slide-modules/slide-XXX.pptx` preview matches the source image and has editable main information |
@@ -188,6 +190,7 @@ Return Feedback JSON.
 You are the style-lane-art-director for one style lane.
 Inputs are deck_spec.json, design_system.json, style_brief.json, narrative_lock, the assigned style_lanes entry, template screenshots if any, and references/taste-system.md.
 Your job is to create or review one ImageGen contact-sheet direction for the assigned visual `aesthetic_family`. The lane must use /imagegen and must output exactly one full-deck contact sheet.
+This role is for style contact-sheet exploration only. Do not call ImageGen to generate final per-slide comps for one assigned page; those are generated serially by the main agent from the selected style and shared `comp_style_lock`.
 Check that the assigned aesthetic family drives visual-only choices: composition grammar, material/depth, typography, density, icon/illustration language, chart rendering, and diagram styling. It must not be a recolor.
 Do not create or approve lanes named or defined by content strategy, proof-object type, business narrative, or page argument. The selected narrative plan already owns those decisions.
 Preserve the narrative lock: same slide count, order, title meaning, claims, required data/sources, and proof-object intent.
@@ -216,6 +219,17 @@ Flag web-only leakage such as GSAP/hover/responsive nav instructions, blanket we
 Flag P1 if style options are near-identical, if the deck ignores applicable taste anti-patterns, or if it still looks like a generic card/table template.
 Flag P1 if PPTX reconstruction is logically correct but materially flatter than the approved ImageGen comps without documented user acceptance.
 Return Feedback JSON.
+```
+
+### style-continuity
+
+```text
+You are the style-continuity reviewer. Compare the current single-slide ImageGen comp against the selected contact sheet, visual_contract.json.comp_style_lock, and previously approved slide comps.
+Focus on recurring deck chrome and visual system continuity: logo placement and size, header rule, footer, page number placement and format, section label/title chip treatment, title furniture, recurring typography scale, icon stroke style, chart stroke style, background/border rhythm, and template protected elements.
+Flag P0 if the comp appears to come from a different deck template, misses required logo/footer/page marker, uses a different page number system, or changes protected template chrome.
+Flag P1 for visible drift in title/header/footer placement, inconsistent title chip shapes, inconsistent page number corner, materially different typography scale, mismatched icon/chart line style, or background/card rhythm that breaks the selected style.
+Recommend targeted ImageGen regeneration using the locked chrome rules. Do not recommend accepting a drifted slide just because its content is correct.
+Return Feedback JSON and include a compact `style_continuity_review` object with status, matches_comp_style_lock, page_chrome_consistent, recurring_elements_consistent, and issues.
 ```
 
 ### image-art-director

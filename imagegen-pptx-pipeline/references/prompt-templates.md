@@ -273,6 +273,9 @@ Asset type: one high-resolution 16:9 PPT slide visual comp
 Primary request:
 I selected <Option X>. Based on that PPT contact sheet, continue using /imagegen and generate slide <slide_id> as one independent ultra-sharp high-resolution 16:9 PPT visual comp. Use the highest detail/resolution available. The saved image must be true 4K 16:9 (`3840x2160`) or higher, at least 5 MiB, and use the exact same pixel dimensions as every other single-slide comp in this deck.
 
+Execution ownership:
+This is part of a main-agent serial ImageGen pass. Do not delegate final per-slide ImageGen calls to page-owning subagents. Use subagents only for prompt notes or review. Preserve the same `comp_style_lock` from slide to slide.
+
 Inputs:
 - Selected contact sheet: <attach or reference image>
 - Original PPT outline / deck_spec.json: <exact content source>
@@ -280,6 +283,8 @@ Inputs:
 - Narrative plan: <selected treatment for this slide>
 - Deck spec for this slide: <exact title, claim, body text, data, proof object, visual intent>
 - Design system: <palette, typography, background, chart/icon/card/page rules, built-in taste rules>
+- Comp style lock: <comp_style_lock; page chrome, logo/header/footer/page-number/title-furniture rules locked from the selected contact sheet and previous approved comps>
+- Previous approved comps: <paths or thumbnails for slide-001..previous slide, used only to keep recurring page chrome consistent>
 - Image quality policy: <image_quality_policy; maximum detail, 3840x2160 or higher single-slide output, at least 5 MiB per approved comp, same pixel dimensions for every page, crisp text/icons/fine lines, no blur>
 - Template/source slide screenshot, if template-following: <attach mapped source slide screenshot>
 - Template protected elements, if template-following: <logo/footer/page marker/title furniture/background frame/etc.>
@@ -292,19 +297,21 @@ Requirements:
 2. Do not generate a contact sheet, grid, or multi-slide image.
 3. Preserve the selected option's visual system: type character, size hierarchy, colors, backgrounds, chart language, icon style, cards, margins, white space, footer, page number, and density.
 4. If a template/source PPTX is supplied, preserve the mapped source slide's logo, footer, page marker, title furniture, background frame, typography feel, and brand chrome. Do not replace them with a new invented design.
-5. Use this slide's confirmed content. Do not invent brands, logos, people, data, products, or sources.
-6. Major title, claim, key numbers, chart labels, and page number should be legible.
-7. Avoid garbled text, pseudo-Chinese, repeated page numbers, wrong page numbers, missing page numbers, and misspellings.
-8. If tiny text is hard to render exactly, preserve the layout relationship and leave final exact text to PPTX reconstruction from `deck_spec.json`.
-9. The rendered image must be crisp at full size: true 4K 16:9 (`3840x2160`) or higher, sharp title edges, readable key numbers, clean icon strokes, clear chart/diagram lines, high-contrast labels, and no soft-focus blur, glow over text, or compression artifacts.
-10. Avoid unreadable microtext. Prefer fewer/larger labels, abbreviated labels, callout grouping, or leaving exact tiny copy to PPTX reconstruction rather than producing blurry pseudo-text.
-11. The comp should look like a finished slide, not a wireframe or design note.
-12. Output only the high-resolution single-slide image for this page. Do not generate PPTX in this phase.
-13. Preserve or improve the selected direction's design quality. Do not simplify the page into plain tables, equal square cards, generic white boxes, or default PPT placeholders unless that exact structure was intentionally selected.
-14. Use a slide-specific visual archetype: system map, maturity arc, loop, funnel, radial, timeline, swimlane, matrix, scorecard, dashboard, process chain, comparison, or title composition. Make the archetype obvious.
-15. Balance editability with visual richness: keep main text regions clean enough to rebuild later, but allow complex depth, background, icon, and diagram layers that can be retained as cropped image assets in PPTX.
-16. Save this generated image as `slides/slide-XXX-comp.png`. Do not use a PPTX preview, template screenshot, output contact sheet, or final render as this comp.
-17. The saved file must be at least 5 MiB. If the file is smaller, lower than 3840x2160, or uses a different pixel size from the rest of the deck, regenerate before review.
+5. Match `comp_style_lock`: same logo placement/size, same header/footer system, same page number placement/format, same title or section treatment, same recurring typography scale, same border/background/chrome rhythm.
+6. Compare against previous approved comps. If page chrome, title furniture, footer, page number, logo, recurring icon stroke, or background rhythm drifts, regenerate instead of accepting a near match.
+7. Use this slide's confirmed content. Do not invent brands, logos, people, data, products, or sources.
+8. Major title, claim, key numbers, chart labels, and page number should be legible.
+9. Avoid garbled text, pseudo-Chinese, repeated page numbers, wrong page numbers, missing page numbers, and misspellings.
+10. If tiny text is hard to render exactly, preserve the layout relationship and leave final exact text to PPTX reconstruction from `deck_spec.json`.
+11. The rendered image must be crisp at full size: true 4K 16:9 (`3840x2160`) or higher, sharp title edges, readable key numbers, clean icon strokes, clear chart/diagram lines, high-contrast labels, and no soft-focus blur, glow over text, or compression artifacts.
+12. Avoid unreadable microtext. Prefer fewer/larger labels, abbreviated labels, callout grouping, or leaving exact tiny copy to PPTX reconstruction rather than producing blurry pseudo-text.
+13. The comp should look like a finished slide, not a wireframe or design note.
+14. Output only the high-resolution single-slide image for this page. Do not generate PPTX in this phase.
+15. Preserve or improve the selected direction's design quality. Do not simplify the page into plain tables, equal square cards, generic white boxes, or default PPT placeholders unless that exact structure was intentionally selected.
+16. Use a slide-specific visual archetype: system map, maturity arc, loop, funnel, radial, timeline, swimlane, matrix, scorecard, dashboard, process chain, comparison, or title composition. Make the archetype obvious.
+17. Balance editability with visual richness: keep main text regions clean enough to rebuild later, but allow complex depth, background, icon, and diagram layers that can be retained as cropped image assets in PPTX.
+18. Save this generated image as `slides/slide-XXX-comp.png`. Do not use a PPTX preview, template screenshot, output contact sheet, or final render as this comp.
+19. The saved file must be at least 5 MiB. If the file is smaller, lower than 3840x2160, or uses a different pixel size from the rest of the deck, regenerate before review.
 ```
 
 ## 6. Reviewer Iteration Prompt

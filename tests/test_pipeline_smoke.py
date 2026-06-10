@@ -91,6 +91,47 @@ def clarity_review() -> dict:
     }
 
 
+def style_continuity_review() -> dict:
+    return {
+        "status": "approved",
+        "matches_comp_style_lock": True,
+        "page_chrome_consistent": True,
+        "recurring_elements_consistent": True,
+        "issues": [],
+    }
+
+
+def visual_contract_generation_defaults() -> dict:
+    return {
+        "comp_generation_mode": "main_agent_serial_imagegen",
+        "parallel_page_subagents_used": False,
+        "explicit_parallel_comp_generation_accepted": False,
+        "comp_style_lock": {
+            "source": "selected contact sheet + first approved comp",
+            "dimensions_px": {"width": 3840, "height": 2160},
+            "chrome_locked": True,
+            "locked_chrome_elements": [
+                "logo",
+                "section label",
+                "header rule",
+                "footer",
+                "page number",
+                "page marker",
+                "title furniture",
+            ],
+            "consistency_requirements": [
+                "same page number placement and format",
+                "same logo placement and size",
+                "same header/footer system",
+                "same section label treatment",
+                "same recurring typography scale",
+                "same border/background/chrome rhythm",
+            ],
+            "generation_owner": "main_agent",
+        },
+    }
+
+
 def fake_png(width: int = 3840, height: int = 2160, min_bytes: int = MIN_COMP_BYTES) -> bytes:
     payload = (
         b"\x89PNG\r\n\x1a\n"
@@ -313,6 +354,7 @@ class PipelineSmokeTests(unittest.TestCase):
                 "slides": [{"slide_id": "slide-001"}],
             }
             visual_contract = {
+                **visual_contract_generation_defaults(),
                 "selected_style": "Option A",
                 "contact_sheet": "styles/option-a-contact-sheet.png",
                 "per_slide_comps_complete": True,
@@ -339,6 +381,7 @@ class PipelineSmokeTests(unittest.TestCase):
             visual_contract["slides"][0].update(
                 {
                     "clarity_review": clarity_review(),
+                    "style_continuity_review": style_continuity_review(),
                     "comp_backplate": {
                         "strategy": "full_slide",
                         "path": "slides/slide-001-comp.png",
@@ -382,6 +425,7 @@ class PipelineSmokeTests(unittest.TestCase):
                 }
             )
             visual_contract = {
+                **visual_contract_generation_defaults(),
                 "selected_style": "Option A",
                 "contact_sheet": "styles/option-a-contact-sheet.png",
                 "per_slide_comps_complete": True,
@@ -396,6 +440,7 @@ class PipelineSmokeTests(unittest.TestCase):
                         "visual_archetype": "system map",
                         "reconstruction_mode": "pixel_locked_hybrid",
                         "clarity_review": bad_clarity,
+                        "style_continuity_review": style_continuity_review(),
                         "comp_backplate": {
                             "strategy": "full_slide",
                             "path": "slides/slide-001-comp.png",
@@ -431,6 +476,7 @@ class PipelineSmokeTests(unittest.TestCase):
                 "slides": [{"slide_id": "slide-001"}],
             }
             visual_contract = {
+                **visual_contract_generation_defaults(),
                 "selected_style": "Option A",
                 "contact_sheet": "styles/option-a-contact-sheet.png",
                 "per_slide_comps_complete": True,
@@ -445,6 +491,7 @@ class PipelineSmokeTests(unittest.TestCase):
                         "visual_archetype": "system map",
                         "reconstruction_mode": "pixel_locked_hybrid",
                         "clarity_review": clarity_review(),
+                        "style_continuity_review": style_continuity_review(),
                         "comp_backplate": {
                             "strategy": "full_slide",
                             "path": "slides/slide-001-comp.png",
@@ -479,6 +526,7 @@ class PipelineSmokeTests(unittest.TestCase):
                 "slides": [{"slide_id": "slide-001"}, {"slide_id": "slide-002"}],
             }
             visual_contract = {
+                **visual_contract_generation_defaults(),
                 "selected_style": "Option A",
                 "contact_sheet": "styles/option-a-contact-sheet.png",
                 "per_slide_comps_complete": True,
@@ -499,6 +547,7 @@ class PipelineSmokeTests(unittest.TestCase):
                         "visual_archetype": "system map",
                         "reconstruction_mode": "pixel_locked_hybrid",
                         "clarity_review": review,
+                        "style_continuity_review": style_continuity_review(),
                         "comp_backplate": {
                             "strategy": "full_slide",
                             "path": f"slides/slide-{idx:03d}-comp.png",
@@ -517,6 +566,63 @@ class PipelineSmokeTests(unittest.TestCase):
             gate_module.check_visual_contract(workspace, deck_spec, visual_contract, failures)
             self.assertTrue(any("dimensions must match every other slide" in item for item in failures))
             self.assertTrue(any("approved comp file must be at least 3840x2160" in item for item in failures))
+
+    def test_visual_contract_rejects_parallel_page_subagent_generation_without_user_acceptance(self) -> None:
+        gate_module = load_gate_module()
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp)
+            (workspace / "slides").mkdir()
+            (workspace / "styles").mkdir()
+            (workspace / "slides" / "slide-001-comp.png").write_bytes(fake_png())
+            (workspace / "styles" / "option-a-contact-sheet.png").write_bytes(fake_png(2400, 1350))
+            deck_spec = {
+                "deck": {"slide_count": 1},
+                "slides": [{"slide_id": "slide-001"}],
+            }
+            visual_contract = {
+                **visual_contract_generation_defaults(),
+                "selected_style": "Option A",
+                "contact_sheet": "styles/option-a-contact-sheet.png",
+                "per_slide_comps_complete": True,
+                "comp_generation_mode": "parallel_page_subagents",
+                "parallel_page_subagents_used": True,
+                "explicit_parallel_comp_generation_accepted": False,
+                "comp_style_lock": {
+                    **visual_contract_generation_defaults()["comp_style_lock"],
+                    "generation_owner": "page_subagents",
+                },
+                "default_reconstruction_mode": "pixel_locked_hybrid",
+                "pixel_locked_hybrid_required": True,
+                "image_quality_policy": quality_policy(),
+                "slides": [
+                    {
+                        "slide_id": "slide-001",
+                        "comp_path": "slides/slide-001-comp.png",
+                        "image_source_type": "imagegen",
+                        "visual_archetype": "system map",
+                        "reconstruction_mode": "pixel_locked_hybrid",
+                        "clarity_review": clarity_review(),
+                        "style_continuity_review": style_continuity_review(),
+                        "comp_backplate": {
+                            "strategy": "full_slide",
+                            "path": "slides/slide-001-comp.png",
+                            "insert_first": True,
+                        },
+                        "text_mask_plan": [
+                            {"region": "title", "method": "shape mask", "reason": "editable title overlay"}
+                        ],
+                        "editable_overlay_plan": {
+                            "visible_native_text_overlay": True,
+                            "visible_overlay_count": 2,
+                        },
+                    }
+                ],
+            }
+            failures: list[str] = []
+            gate_module.check_visual_contract(workspace, deck_spec, visual_contract, failures)
+            self.assertTrue(any("comp_generation_mode" in item for item in failures))
+            self.assertTrue(any("parallel_page_subagents_used" in item for item in failures))
+            self.assertTrue(any("generation_owner" in item for item in failures))
 
     def test_style_gate_rejects_content_strategy_as_visual_style(self) -> None:
         gate_module = load_gate_module()

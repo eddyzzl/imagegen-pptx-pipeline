@@ -95,6 +95,30 @@ DEFAULT_IMAGEGEN_FAILURE_POLICY = {
     "retry_log_path": "imagegen_retry_log.json",
 }
 
+DEFAULT_COMP_STYLE_LOCK = {
+    "source": "",
+    "dimensions_px": {"width": 3840, "height": 2160},
+    "chrome_locked": True,
+    "locked_chrome_elements": [
+        "logo",
+        "section label",
+        "header rule",
+        "footer",
+        "page number",
+        "page marker",
+        "title furniture",
+    ],
+    "consistency_requirements": [
+        "same page number placement and format",
+        "same logo placement and size",
+        "same header/footer system",
+        "same section label treatment",
+        "same recurring typography scale",
+        "same border/background/chrome rhythm",
+    ],
+    "generation_owner": "main_agent",
+}
+
 
 def slugify(value: str) -> str:
     value = value.strip().lower()
@@ -414,6 +438,10 @@ def main() -> int:
         "template_contact_sheet": "",
         "template_frame_map": "template-frame-map.json",
         "per_slide_comps_complete": False,
+        "comp_generation_mode": "main_agent_serial_imagegen",
+        "parallel_page_subagents_used": False,
+        "explicit_parallel_comp_generation_accepted": False,
+        "comp_style_lock": DEFAULT_COMP_STYLE_LOCK,
         "downgrade_mode": False,
         "explicit_downgrade_accepted": False,
         "comp_is_construction_drawing": True,

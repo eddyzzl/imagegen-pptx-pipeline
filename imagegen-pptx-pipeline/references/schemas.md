@@ -756,6 +756,32 @@ Use after ImageGen style selection and single-slide comps, before PPTX authoring
   "template_contact_sheet": "previews/template-contact-sheet.png",
   "template_frame_map": "template-frame-map.json",
   "per_slide_comps_complete": true,
+  "comp_generation_mode": "main_agent_serial_imagegen",
+  "parallel_page_subagents_used": false,
+  "explicit_parallel_comp_generation_accepted": false,
+  "comp_style_lock": {
+    "source": "selected contact sheet + first approved comp",
+    "dimensions_px": {"width": 3840, "height": 2160},
+    "chrome_locked": true,
+    "locked_chrome_elements": [
+      "logo",
+      "section label",
+      "header rule",
+      "footer",
+      "page number",
+      "page marker",
+      "title furniture"
+    ],
+    "consistency_requirements": [
+      "same page number placement and format",
+      "same logo placement and size",
+      "same header/footer system",
+      "same section label treatment",
+      "same recurring typography scale",
+      "same border/background/chrome rhythm"
+    ],
+    "generation_owner": "main_agent"
+  },
   "downgrade_mode": false,
   "explicit_downgrade_accepted": false,
   "comp_is_construction_drawing": true,
@@ -805,6 +831,13 @@ Use after ImageGen style selection and single-slide comps, before PPTX authoring
         "blocking_blur": false,
         "small_text_strategy": "regenerate | enlarge labels | simplify microtext | defer exact small copy to PPTX native text | user accepted risk",
         "reviewer": "visual-clarity"
+      },
+      "style_continuity_review": {
+        "status": "approved | needs_regeneration | user_accepted_risk",
+        "matches_comp_style_lock": true,
+        "page_chrome_consistent": true,
+        "recurring_elements_consistent": true,
+        "issues": []
       },
       "iteration_count": 1,
       "visual_archetype": "maturity arc | system map | loop | funnel | radial | timeline | swimlane | matrix | scorecard | dashboard | process chain | comparison | title",
@@ -875,8 +908,12 @@ Use after ImageGen style selection and single-slide comps, before PPTX authoring
 Rules:
 
 - `default_reconstruction_mode` should be `pixel_locked_hybrid`; use `native_rebuild` only with preview evidence or explicit user acceptance.
+- In generated-deck mode, `comp_generation_mode` must be `main_agent_serial_imagegen`; page-level subagents may review or draft prompt notes but must not independently call ImageGen for final single-slide comps.
+- `parallel_page_subagents_used` must be false unless the user explicitly accepted the style-drift risk in `user_decisions.md` and `explicit_parallel_comp_generation_accepted=true`.
+- `comp_style_lock.chrome_locked` must be true. The lock must include at least logo, footer, page number/page marker, and a header/title/section treatment so recurring slide chrome cannot drift between pages.
 - Each slide must have `reconstruction_mode`, `comp_backplate`, `text_mask_plan`, and `editable_overlay_plan` before PPTX authoring.
 - Each slide must have `clarity_review.status=approved` or `user_accepted_risk` before PPTX authoring. Blurry titles, key numbers, icons, fine lines, or low-resolution comps block `before-pptx`.
+- Each generated-deck slide must have `style_continuity_review.status=approved`, `matches_comp_style_lock=true`, `page_chrome_consistent=true`, and `recurring_elements_consistent=true` before PPTX authoring.
 - `pixel_locked_hybrid` and `sliced_hybrid` slides must insert the approved comp or cropped comp layers before native overlays.
 - A whole-slide comp backplate is allowed. A final slide that is only a flat image with no editable main information is not allowed unless the user explicitly requested non-editable output.
 - In `reconstruction-only` and `repair-existing-pptx` modes, `contact_sheet` is optional and `selected_style` should be `user-supplied-final-images` or `repaired-from-source-images`.
