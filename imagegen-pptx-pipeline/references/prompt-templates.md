@@ -161,7 +161,7 @@ Inputs:
 - Style lane: <option_id, style_lane_id, aesthetic_family, visual_skin, name, premise, must_differ_by>
 - Narrative lock: <deck_spec_fingerprint, locked_slide_count, locked_slide_order, invariant fields, forbidden story mutations>
 - Style brief: <deck_profile, direction_count, diversity axes, visual ambition, built-in taste guidance>
-- Image quality policy: <image_quality_policy; request highest available detail/resolution, crisp text/icons/fine lines, no blur>
+- Image quality policy: <image_quality_policy; request highest available detail/resolution, 4K single-slide comps, at least 5 MiB per approved comp, identical comp dimensions across the deck, crisp text/icons/fine lines, no blur>
 - Built-in PPT taste system: <relevant rules from references/taste-system.md, plus any optional supplemental taste sources>
 - Template contact sheet and source-slide screenshots, if supplied: <attach or reference images>
 - Slide count: <N>
@@ -184,7 +184,7 @@ Output requirements:
 15. Apply the built-in PPT taste system from `taste_guidance`: avoid generic equal-card grids, flat table-only decks, default PPT template feel, and near-identical variants; use profile-appropriate proof objects and crafted diagram language.
 16. If optional external taste sources were recorded, apply only their portable PPT rules and anti-patterns. Do not copy frontend-only interactions, web navigation, hover/GSAP, or responsive layout rules into the slide design.
 17. After generation, record the output as `styles/option-<option_id>-contact-sheet.png`, set `generator=imagegen`, and run a narrative-invariance check against the lock.
-18. Request maximum available ImageGen fidelity: high-detail rendering, crisp vector-like icons, sharp fine lines, clean anti-aliased typography, high-contrast labels, and no blur/compression artifacts.
+18. Request maximum available ImageGen fidelity: high-detail rendering, crisp vector-like icons, sharp fine lines, clean anti-aliased typography, high-contrast labels, and no blur/compression artifacts. Note that later single-slide comps must be true 4K and dimension-consistent across the deck.
 19. Use a large, clean contact-sheet canvas. Each thumbnail must be sharp enough to judge composition, icon style, title hierarchy, chart strokes, and module boundaries. Do not accept fuzzy thumbnails.
 20. Do not create HTML/CSS/SVG blueprints, browser screenshots, React pages, canvas renders, PPTX previews, or static mockups as substitutes for ImageGen outputs.
 21. If ImageGen fails and this prompt must be retried shorter, preserve the locked slide order, slide titles, core claims, required data, proof-object intent, template constraints, visual density floor, and assigned aesthetic family. Remove only duplicated prose, internal rationale, repeated constraints, or verbose citations. Do not simplify the deck into sparse cards/tables, do not reduce slide count, and do not switch to HTML or browser-rendered previews.
@@ -271,7 +271,7 @@ Use case: productivity-visual
 Asset type: one high-resolution 16:9 PPT slide visual comp
 
 Primary request:
-I selected <Option X>. Based on that PPT contact sheet, continue using /imagegen and generate slide <slide_id> as one independent ultra-sharp high-resolution 16:9 PPT visual comp. Use the highest detail/resolution available; target a 4K-like 3840x2160 canvas when supported.
+I selected <Option X>. Based on that PPT contact sheet, continue using /imagegen and generate slide <slide_id> as one independent ultra-sharp high-resolution 16:9 PPT visual comp. Use the highest detail/resolution available. The saved image must be true 4K 16:9 (`3840x2160`) or higher, at least 5 MiB, and use the exact same pixel dimensions as every other single-slide comp in this deck.
 
 Inputs:
 - Selected contact sheet: <attach or reference image>
@@ -280,7 +280,7 @@ Inputs:
 - Narrative plan: <selected treatment for this slide>
 - Deck spec for this slide: <exact title, claim, body text, data, proof object, visual intent>
 - Design system: <palette, typography, background, chart/icon/card/page rules, built-in taste rules>
-- Image quality policy: <image_quality_policy; maximum detail, crisp text/icons/fine lines, no blur>
+- Image quality policy: <image_quality_policy; maximum detail, 3840x2160 or higher single-slide output, at least 5 MiB per approved comp, same pixel dimensions for every page, crisp text/icons/fine lines, no blur>
 - Template/source slide screenshot, if template-following: <attach mapped source slide screenshot>
 - Template protected elements, if template-following: <logo/footer/page marker/title furniture/background frame/etc.>
 
@@ -296,7 +296,7 @@ Requirements:
 6. Major title, claim, key numbers, chart labels, and page number should be legible.
 7. Avoid garbled text, pseudo-Chinese, repeated page numbers, wrong page numbers, missing page numbers, and misspellings.
 8. If tiny text is hard to render exactly, preserve the layout relationship and leave final exact text to PPTX reconstruction from `deck_spec.json`.
-9. The rendered image must be crisp at full size: sharp title edges, readable key numbers, clean icon strokes, clear chart/diagram lines, high-contrast labels, and no soft-focus blur, glow over text, or compression artifacts.
+9. The rendered image must be crisp at full size: true 4K 16:9 (`3840x2160`) or higher, sharp title edges, readable key numbers, clean icon strokes, clear chart/diagram lines, high-contrast labels, and no soft-focus blur, glow over text, or compression artifacts.
 10. Avoid unreadable microtext. Prefer fewer/larger labels, abbreviated labels, callout grouping, or leaving exact tiny copy to PPTX reconstruction rather than producing blurry pseudo-text.
 11. The comp should look like a finished slide, not a wireframe or design note.
 12. Output only the high-resolution single-slide image for this page. Do not generate PPTX in this phase.
@@ -304,6 +304,7 @@ Requirements:
 14. Use a slide-specific visual archetype: system map, maturity arc, loop, funnel, radial, timeline, swimlane, matrix, scorecard, dashboard, process chain, comparison, or title composition. Make the archetype obvious.
 15. Balance editability with visual richness: keep main text regions clean enough to rebuild later, but allow complex depth, background, icon, and diagram layers that can be retained as cropped image assets in PPTX.
 16. Save this generated image as `slides/slide-XXX-comp.png`. Do not use a PPTX preview, template screenshot, output contact sheet, or final render as this comp.
+17. The saved file must be at least 5 MiB. If the file is smaller, lower than 3840x2160, or uses a different pixel size from the rest of the deck, regenerate before review.
 ```
 
 ## 6. Reviewer Iteration Prompt

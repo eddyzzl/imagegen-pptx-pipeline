@@ -443,7 +443,8 @@ Use after narrative lock and before style contact-sheet ImageGen calls.
     "enabled": true,
     "prompt_detail_level": "highest_available",
     "requested_single_slide_canvas_px": {"width": 3840, "height": 2160},
-    "minimum_acceptable_comp_px": {"width": 1920, "height": 1080},
+    "minimum_acceptable_comp_px": {"width": 3840, "height": 2160},
+    "minimum_acceptable_comp_bytes": 5242880,
     "minimum_acceptable_contact_sheet_px": {"width": 2400, "height": 1350},
     "prompt_requires_crisp_text_and_icons": true,
     "review_required_before_pptx": true,
@@ -599,7 +600,7 @@ Rules:
 - Each lane/contact sheet must record an `invariance_check`. Any violation blocks style selection.
 - Built-in taste guidance should be reflected as portable PPT rules and anti-patterns. External taste sources are optional supplements only and must not be copied wholesale from frontend skills.
 - Template-following directions may not change protected template elements; they must differentiate inside allowed content zones.
-- `image_quality_policy` must request the highest available ImageGen detail/resolution. The policy is used by ImageGen prompts, visual-clarity review, and the `before-pptx` gate.
+- `image_quality_policy` must request the highest available ImageGen detail/resolution. The policy is used by ImageGen prompts, visual-clarity review, and the `before-pptx` gate. Single-slide comps must be at least `3840x2160`, at least `5242880` bytes each, and all approved single-slide comps in one deck must have identical pixel dimensions.
 - `imagegen_failure_policy` must fail closed. ImageGen server/tool failures, timeouts, or long-prompt failures may trigger prompt compression only if locked content, visual density, template constraints, proof-object intent, and aesthetic family are preserved. They may not trigger HTML/browser surrogates, generic PPT fallback, lower information density, or lower visual complexity.
 - `imagegen_retry_log.json` is optional only when every ImageGen call succeeds on the first try. If it exists and contains attempts, each attempt must record failure class, prompt paths, compression strategy, preserved fields, and final status. Any attempt that removed locked content, reduced content/visual density, used HTML/browser output, switched to generic PPT, or marked a failed asset ready blocks style selection.
 - HTML/CSS/browser blueprints, browser screenshots, React pages, canvas renders, PPTX previews, and hand-made static previews are invalid style/contact-sheet or single-slide comp sources.
@@ -766,7 +767,8 @@ Use after ImageGen style selection and single-slide comps, before PPTX authoring
     "enabled": true,
     "prompt_detail_level": "highest_available",
     "requested_single_slide_canvas_px": {"width": 3840, "height": 2160},
-    "minimum_acceptable_comp_px": {"width": 1920, "height": 1080},
+    "minimum_acceptable_comp_px": {"width": 3840, "height": 2160},
+    "minimum_acceptable_comp_bytes": 5242880,
     "minimum_acceptable_contact_sheet_px": {"width": 2400, "height": 1350},
     "prompt_requires_crisp_text_and_icons": true,
     "review_required_before_pptx": true,
@@ -796,6 +798,7 @@ Use after ImageGen style selection and single-slide comps, before PPTX authoring
         "status": "not_started | needs_iteration | approved | user_accepted_risk",
         "image_source_type": "imagegen | user_supplied | template_render",
         "image_dimensions_px": {"width": 3840, "height": 2160},
+        "image_file_size_bytes": 5242880,
         "text_legibility": "not_started | failed | acceptable | approved | user_accepted_risk",
         "icon_line_clarity": "not_started | failed | acceptable | approved | user_accepted_risk",
         "edge_sharpness": "not_started | failed | acceptable | approved | user_accepted_risk",

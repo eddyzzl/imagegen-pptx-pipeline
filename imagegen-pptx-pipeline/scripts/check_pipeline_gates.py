@@ -408,8 +408,10 @@ def check_image_quality_policy(policy, failures: list[str], owner: str) -> dict:
     if safe_int(requested.get("width")) < 3840 or safe_int(requested.get("height")) < 2160:
         failures.append(f"{owner} image_quality_policy.requested_single_slide_canvas_px must target at least 3840x2160")
     minimum = policy.get("minimum_acceptable_comp_px") or {}
-    if safe_int(minimum.get("width")) < 1920 or safe_int(minimum.get("height")) < 1080:
-        failures.append(f"{owner} image_quality_policy.minimum_acceptable_comp_px must be at least 1920x1080")
+    if safe_int(minimum.get("width")) < 3840 or safe_int(minimum.get("height")) < 2160:
+        failures.append(f"{owner} image_quality_policy.minimum_acceptable_comp_px must be at least 3840x2160")
+    if safe_int(policy.get("minimum_acceptable_comp_bytes")) < 5 * 1024 * 1024:
+        failures.append(f"{owner} image_quality_policy.minimum_acceptable_comp_bytes must be at least 5242880")
     contact_min = policy.get("minimum_acceptable_contact_sheet_px") or {}
     if safe_int(contact_min.get("width")) < 2400 or safe_int(contact_min.get("height")) < 1350:
         failures.append(f"{owner} image_quality_policy.minimum_acceptable_contact_sheet_px must be at least 2400x1350")
@@ -955,6 +957,7 @@ def check_visual_contract(workspace: Path, deck_spec: dict, visual_contract: dic
     minimum_px = quality_policy.get("minimum_acceptable_comp_px") or {}
     minimum_width = safe_int(minimum_px.get("width"))
     minimum_height = safe_int(minimum_px.get("height"))
+    minimum_bytes = safe_int(quality_policy.get("minimum_acceptable_comp_bytes"))
     check_no_html_surrogates(workspace, failures)
     if not visual_contract.get("selected_style"):
         failures.append("visual_contract.json selected_style is empty")
@@ -977,6 +980,7 @@ def check_visual_contract(workspace: Path, deck_spec: dict, visual_contract: dic
         failures.append(
             f"visual_contract.json has {len(slides)} slides but deck_spec expects {expected_count}"
         )
+    expected_comp_size: tuple[int, int] | None = None
     for idx, slide in enumerate(slides, 1):
         comp = slide.get("comp_path") or slide.get("approved_comp_path")
         path = require_file(workspace, comp, f"slide {idx:03d} approved comp", failures)
@@ -997,6 +1001,19 @@ def check_visual_contract(workspace: Path, deck_spec: dict, visual_contract: dic
             )
         check_not_html_backed_image(path, f"slide {idx:03d} approved comp", failures)
         actual_width, actual_height = image_size(path)
+        try:
+            actual_bytes = path.stat().st_size
+        except OSError:
+            actual_bytes = 0
+        if actual_width and actual_height:
+            actual_size = (actual_width, actual_height)
+            if expected_comp_size is None:
+                expected_comp_size = actual_size
+            elif actual_size != expected_comp_size:
+                failures.append(
+                    f"slide {idx:03d} approved comp dimensions must match every other slide in this deck; "
+                    f"expected {expected_comp_size[0]}x{expected_comp_size[1]}, got {actual_width}x{actual_height}: {path}"
+                )
         if minimum_width and minimum_height:
             if not actual_width or not actual_height:
                 failures.append(f"slide {idx:03d} approved comp dimensions could not be read: {path}")
@@ -1005,6 +1022,11 @@ def check_visual_contract(workspace: Path, deck_spec: dict, visual_contract: dic
                     f"slide {idx:03d} approved comp file must be at least {minimum_width}x{minimum_height}; "
                     f"got {actual_width}x{actual_height}: {path}"
                 )
+        if minimum_bytes and actual_bytes < minimum_bytes:
+            failures.append(
+                f"slide {idx:03d} approved comp file must be at least {minimum_bytes} bytes; "
+                f"got {actual_bytes}: {path}"
+            )
         if not slide.get("visual_archetype"):
             failures.append(f"slide {idx:03d} missing visual_archetype in visual_contract.json")
         clarity = slide.get("clarity_review")
@@ -1029,6 +1051,7 @@ def check_visual_contract(workspace: Path, deck_spec: dict, visual_contract: dic
             dimensions = clarity.get("image_dimensions_px") or {}
             width = safe_int(dimensions.get("width"))
             height = safe_int(dimensions.get("height"))
+            recorded_bytes = safe_int(clarity.get("image_file_size_bytes") or clarity.get("file_size_bytes"))
             if width and height and minimum_width and minimum_height:
                 if width < minimum_width or height < minimum_height:
                     failures.append(
@@ -1037,6 +1060,14 @@ def check_visual_contract(workspace: Path, deck_spec: dict, visual_contract: dic
                     )
             elif minimum_width and minimum_height:
                 failures.append(f"slide {idx:03d} clarity_review.image_dimensions_px is missing")
+            if recorded_bytes and minimum_bytes:
+                if recorded_bytes < minimum_bytes:
+                    failures.append(
+                        f"slide {idx:03d} clarity_review.image_file_size_bytes must be at least "
+                        f"{minimum_bytes}; got {recorded_bytes}"
+                    )
+            elif minimum_bytes:
+                failures.append(f"slide {idx:03d} clarity_review.image_file_size_bytes is missing")
         source_type = slide.get("image_source_type") or clarity.get("image_source_type")
         if not reconstruction_mode and source_type != "imagegen":
             failures.append(f"slide {idx:03d} image_source_type must be imagegen in generated-deck mode")

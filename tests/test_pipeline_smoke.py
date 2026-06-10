@@ -10,6 +10,7 @@ import unittest
 from pathlib import Path
 
 
+MIN_COMP_BYTES = 5 * 1024 * 1024
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SKILL_DIR = REPO_ROOT / "imagegen-pptx-pipeline"
 INIT_SCRIPT = SKILL_DIR / "scripts" / "init_pipeline_workspace.py"
@@ -35,7 +36,8 @@ def quality_policy() -> dict:
         "enabled": True,
         "prompt_detail_level": "highest_available",
         "requested_single_slide_canvas_px": {"width": 3840, "height": 2160},
-        "minimum_acceptable_comp_px": {"width": 1920, "height": 1080},
+        "minimum_acceptable_comp_px": {"width": 3840, "height": 2160},
+        "minimum_acceptable_comp_bytes": MIN_COMP_BYTES,
         "minimum_acceptable_contact_sheet_px": {"width": 2400, "height": 1350},
         "prompt_requires_crisp_text_and_icons": True,
         "review_required_before_pptx": True,
@@ -79,7 +81,8 @@ def failure_policy() -> dict:
 def clarity_review() -> dict:
     return {
         "status": "approved",
-        "image_dimensions_px": {"width": 1920, "height": 1080},
+        "image_dimensions_px": {"width": 3840, "height": 2160},
+        "image_file_size_bytes": MIN_COMP_BYTES,
         "text_legibility": "approved",
         "icon_line_clarity": "approved",
         "edge_sharpness": "approved",
@@ -88,14 +91,17 @@ def clarity_review() -> dict:
     }
 
 
-def fake_png(width: int = 1920, height: int = 1080) -> bytes:
-    return (
+def fake_png(width: int = 3840, height: int = 2160, min_bytes: int = MIN_COMP_BYTES) -> bytes:
+    payload = (
         b"\x89PNG\r\n\x1a\n"
         + b"\x00\x00\x00\rIHDR"
         + struct.pack(">II", width, height)
         + b"\x08\x02\x00\x00\x00"
         + b"\x00\x00\x00\x00"
     )
+    if min_bytes and len(payload) < min_bytes:
+        payload += b"\0" * (min_bytes - len(payload))
+    return payload
 
 
 def taste_guidance() -> dict:
@@ -458,6 +464,59 @@ class PipelineSmokeTests(unittest.TestCase):
             gate_module.check_visual_contract(workspace, deck_spec, visual_contract, failures)
             self.assertTrue(any("HTML/CSS/browser surrogate" in item for item in failures))
             self.assertTrue(any("HTML/browser blueprint" in item for item in failures))
+
+    def test_visual_contract_rejects_mixed_comp_dimensions(self) -> None:
+        gate_module = load_gate_module()
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp)
+            (workspace / "slides").mkdir()
+            (workspace / "styles").mkdir()
+            (workspace / "slides" / "slide-001-comp.png").write_bytes(fake_png(3840, 2160))
+            (workspace / "slides" / "slide-002-comp.png").write_bytes(fake_png(1920, 1080))
+            (workspace / "styles" / "option-a-contact-sheet.png").write_bytes(fake_png(2400, 1350))
+            deck_spec = {
+                "deck": {"slide_count": 2},
+                "slides": [{"slide_id": "slide-001"}, {"slide_id": "slide-002"}],
+            }
+            visual_contract = {
+                "selected_style": "Option A",
+                "contact_sheet": "styles/option-a-contact-sheet.png",
+                "per_slide_comps_complete": True,
+                "default_reconstruction_mode": "pixel_locked_hybrid",
+                "pixel_locked_hybrid_required": True,
+                "image_quality_policy": quality_policy(),
+                "slides": [],
+            }
+            for idx in (1, 2):
+                review = clarity_review()
+                if idx == 2:
+                    review["image_dimensions_px"] = {"width": 1920, "height": 1080}
+                visual_contract["slides"].append(
+                    {
+                        "slide_id": f"slide-{idx:03d}",
+                        "comp_path": f"slides/slide-{idx:03d}-comp.png",
+                        "image_source_type": "imagegen",
+                        "visual_archetype": "system map",
+                        "reconstruction_mode": "pixel_locked_hybrid",
+                        "clarity_review": review,
+                        "comp_backplate": {
+                            "strategy": "full_slide",
+                            "path": f"slides/slide-{idx:03d}-comp.png",
+                            "insert_first": True,
+                        },
+                        "text_mask_plan": [
+                            {"region": "title", "method": "shape mask", "reason": "editable title overlay"}
+                        ],
+                        "editable_overlay_plan": {
+                            "visible_native_text_overlay": True,
+                            "visible_overlay_count": 2,
+                        },
+                    }
+                )
+            failures: list[str] = []
+            gate_module.check_visual_contract(workspace, deck_spec, visual_contract, failures)
+            self.assertTrue(any("dimensions must match every other slide" in item for item in failures))
+            self.assertTrue(any("approved comp file must be at least 3840x2160" in item for item in failures))
 
     def test_style_gate_rejects_content_strategy_as_visual_style(self) -> None:
         gate_module = load_gate_module()

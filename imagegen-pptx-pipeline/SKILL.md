@@ -36,7 +36,7 @@ Default reconstruction mode is **pixel-locked hybrid**, not native-only redraw: 
 - **Style does not rewrite the story:** all style options must preserve `deck_spec.json` and the selected narrative treatment: slide order, section flow, slide titles, claims, required data, sources, core proof objects, and per-slide narrative intent. A visual style lane may express the same narrative differently, but it must not change the deck's narrative logic.
 - **No HTML or browser-rendered surrogate comps:** do not create HTML/CSS/SVG blueprints, browser screenshots, React pages, canvas renders, or ordinary static previews and then save them as `styles/*contact-sheet.png` or `slides/slide-XXX-comp.png`. Full pipeline visual options and per-slide comps must be generated through ImageGen/Image2. HTML is not an acceptable substitute for ImageGen at style or comp stages.
 - **Per-slide ImageGen comps are required:** after style selection, every output slide must have an approved `slides/slide-XXX-comp.png` generated as an independent 16:9 single-slide comp. A contact sheet alone is never enough to build the final PPTX.
-- **Image clarity is a hard gate:** ImageGen contact sheets and single-slide comps must request the highest available detail/resolution, crisp text edges, clean vector-like icons, sharp fine lines, and no blur/compression artifacts. Record `image_quality_policy` in `style_brief.json` and `visual_contract.json`. Every slide comp must have `clarity_review.status=approved` or explicit user-accepted risk before PPTX work.
+- **Image clarity is a hard gate:** ImageGen contact sheets and single-slide comps must request the highest available detail/resolution, crisp text edges, clean vector-like icons, sharp fine lines, and no blur/compression artifacts. Single-slide comps must be true 4K 16:9 (`3840x2160`) or higher, every comp in the deck must use the same pixel dimensions, and each approved comp file must be at least 5 MiB. Record `image_quality_policy` in `style_brief.json` and `visual_contract.json`. Every slide comp must have `clarity_review.status=approved` or explicit user-accepted risk before PPTX work.
 - **ImageGen retries fail closed:** ImageGen server errors, tool failures, timeout-like failures, or long-prompt failures are not permission to simplify the deck, reduce information density, switch to HTML/browser previews, or continue with ordinary PPT layouts. Retry prompts may remove transport noise and duplicated prose only; they must preserve locked slide order, titles, core claims, required data, proof-object intent, template constraints, visual density floor, and the assigned aesthetic family. After repeated failures, block and ask the user rather than marking an option ready.
 - **Images are iterated before PPTX:** subagents/reviewer roles review each single-slide comp. P0/P1 findings must trigger targeted ImageGen regeneration of that slide before PPTX authoring.
 - **PPTX is a pixel-locked hybrid reconstruction of the approved comp:** final slides must preserve the approved comp's appearance by default. Use full-slide or sliced comp backplates when native shape rebuilding would degrade the design, then overlay editable main text/numbers/simple shapes from `deck_spec.json`. Native-only redraw is allowed only when it visibly matches the comp or the user explicitly accepts a fidelity downgrade.
@@ -375,8 +375,10 @@ Set `style_brief.json.style_variation_scope="visual_aesthetic_only"` and `conten
 Set `image_quality_policy` to request maximum available ImageGen clarity:
 
 - `prompt_detail_level="highest_available"`
-- `requested_single_slide_canvas_px` at least `3840x2160` when the generator supports it
-- `minimum_acceptable_comp_px` at least `1920x1080`
+- `requested_single_slide_canvas_px` at least `3840x2160`
+- `minimum_acceptable_comp_px` at least `3840x2160`
+- `minimum_acceptable_comp_bytes` at least `5242880` bytes for every approved single-slide comp
+- every single-slide comp in one deck must have identical pixel dimensions; mixed `1920x1080` and `3840x2160` comps fail
 - `minimum_acceptable_contact_sheet_px` at least `2400x1350`
 - crisp text/icon/fine-line requirements included in every ImageGen prompt
 - blur rejection criteria recorded before any image is approved
@@ -470,7 +472,8 @@ For the selected style, call ImageGen once per slide. This phase is mandatory. E
 - Use the selected contact sheet as the visual system.
 - In template-following mode, attach the mapped template/source slide screenshot from `template-frame-map.json` and require the comp to preserve that template frame.
 - Keep slide numbers and major text visible, but do not rely on ImageGen for exact final text.
-- Request the highest available single-slide clarity/detail. Prefer a 4K-like 3840x2160 16:9 canvas when supported. Demand crisp vector-like icons, clean anti-aliased edges, sharp chart strokes, high-contrast labels, and no blur/glow over text.
+- Request the highest available single-slide clarity/detail. Require a true 4K `3840x2160` 16:9 canvas or higher. Demand crisp vector-like icons, clean anti-aliased edges, sharp chart strokes, high-contrast labels, and no blur/glow over text.
+- Do not mix output dimensions across pages. If any comp is returned at a different width/height from the rest of the deck, regenerate it at the deck-standard 4K size before review.
 - Save files as `slides/slide-001-comp.png`, `slides/slide-002-comp.png`, etc.
 - Save ImageGen prompts under `prompts/slide-001-comp.txt`, `prompts/slide-002-comp.txt`, etc. Record generated image file paths in `deck_spec.json` and `visual_contract.json`.
 - Do not create `slides/*.html`, `styles/*.html`, `slides/blueprints/*`, or any browser-rendered stand-in for the comp. If an HTML/browser preview exists for a slide, it is a blocked surrogate and the slide must be regenerated through ImageGen.

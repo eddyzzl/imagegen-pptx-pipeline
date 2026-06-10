@@ -133,7 +133,7 @@ tools/sync-to-codex.sh --codex-home /path/to/.codex
 - Final text and numbers come from `deck_spec.json`.
 - User-supplied templates are hard constraints.
 - Style options must differ by visual system, not just color.
-- ImageGen prompts request the highest available clarity/detail by default. Single-slide comps target a 4K-like 3840x2160 canvas when supported, and must pass `clarity_review` before PPTX reconstruction.
+- ImageGen prompts request the highest available clarity/detail by default. Single-slide comps must be true 4K 16:9 (`3840x2160`) or higher, at least 5 MiB each, and use identical pixel dimensions across the deck before PPTX reconstruction.
 - Blurry titles, unreadable key numbers, muddy icons, soft fine lines, low-resolution comps, or compression artifacts are P1 blockers unless the user explicitly accepts the risk.
 - PPTX reconstruction defaults to pixel-locked hybrid fidelity: approved comps may be used as full-slide or sliced visual backplates, with visible editable text/numbers/simple shapes overlaid after masking source-image text regions.
 - The workflow does not promise that every complex visual becomes native editable PPT geometry; it preserves complex visuals as image layers when that is required for visual fidelity.
