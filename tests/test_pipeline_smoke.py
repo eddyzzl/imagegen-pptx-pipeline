@@ -16,6 +16,8 @@ SKILL_DIR = REPO_ROOT / "imagegen-pptx-pipeline"
 INIT_SCRIPT = SKILL_DIR / "scripts" / "init_pipeline_workspace.py"
 GATE_SCRIPT = SKILL_DIR / "scripts" / "check_pipeline_gates.py"
 COMP_ASSET_SCRIPT = SKILL_DIR / "scripts" / "check_imagegen_comp_asset.py"
+NORMALIZE_SCRIPT = SKILL_DIR / "scripts" / "normalize_slide_comp.py"
+ICON_SCRIPT = SKILL_DIR / "scripts" / "prepare_icon_assets.py"
 
 
 def load_gate_module():
@@ -39,6 +41,15 @@ def quality_policy() -> dict:
         "requested_single_slide_canvas_px": {"width": 3840, "height": 2160},
         "minimum_acceptable_comp_px": {"width": 3840, "height": 2160},
         "minimum_acceptable_comp_bytes": MIN_COMP_BYTES,
+        "postprocess_policy": {
+            "enabled": True,
+            "normalize_every_comp": True,
+            "target_px": {"width": 3840, "height": 2160},
+            "local_repair_script": "scripts/normalize_slide_comp.py",
+            "save_raw_imagegen_output": True,
+            "same_output_dimensions_required": True,
+            "downstream_uses_normalized_comp": True,
+        },
         "minimum_acceptable_contact_sheet_px": {"width": 2400, "height": 1350},
         "prompt_requires_crisp_text_and_icons": True,
         "review_required_before_pptx": True,
@@ -105,6 +116,7 @@ def style_continuity_review() -> dict:
 def visual_contract_generation_defaults() -> dict:
     return {
         "comp_generation_mode": "main_agent_serial_imagegen",
+        "parallel_style_agents_used": False,
         "parallel_page_subagents_used": False,
         "explicit_parallel_comp_generation_accepted": False,
         "comp_style_lock": {
@@ -130,7 +142,54 @@ def visual_contract_generation_defaults() -> dict:
             ],
             "generation_owner": "main_agent",
         },
+        "icon_asset_policy": {
+            "enabled": True,
+            "manifest_path": "assets/icon-manifests/icon_asset_manifest.json",
+            "processor_script": "scripts/prepare_icon_assets.py",
+            "transparent_png_required": True,
+            "minimum_transparent_padding_px": 16,
+            "crop_expansion_px": 12,
+            "minimum_output_icon_px": 256,
+            "forbid_edge_touching_colored_pixels": True,
+            "use_processed_icons_in_pptx": True,
+        },
+        "pptx_render_fix_loop": {
+            "enabled": True,
+            "minimum_rounds": 9,
+            "rounds_log_path": "qa/render-fix/render_fix_rounds.json",
+            "block_on_unresolved_p0_p1": True,
+        },
     }
+
+
+def normalization_record(idx: int = 1) -> dict:
+    return {
+        "status": "completed",
+        "raw_imagegen_output_path": f"slides/raw/slide-{idx:03d}-imagegen.png",
+        "output_path": f"slides/slide-{idx:03d}-comp.png",
+        "output_dimensions_px": {"width": 3840, "height": 2160},
+        "local_repair_applied": True,
+        "script_path": "scripts/normalize_slide_comp.py",
+    }
+
+
+def write_gate_scaffolding(workspace: Path) -> None:
+    (workspace / "assets" / "icon-manifests").mkdir(parents=True, exist_ok=True)
+    (workspace / "assets" / "icon-manifests" / "icon_asset_manifest.json").write_text(
+        json.dumps({"status": "draft", "icons": []}, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    (workspace / "qa" / "render-fix").mkdir(parents=True, exist_ok=True)
+    (workspace / "qa" / "render-fix" / "render_fix_rounds.json").write_text(
+        json.dumps(
+            {"status": "not_started", "minimum_rounds": 9, "completed_rounds": 0, "rounds": [], "unresolved_p0_p1": []},
+            ensure_ascii=False,
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (workspace / "slides" / "raw").mkdir(parents=True, exist_ok=True)
 
 
 def fake_png(width: int = 3840, height: int = 2160, min_bytes: int = MIN_COMP_BYTES) -> bytes:
@@ -262,6 +321,109 @@ class PipelineSmokeTests(unittest.TestCase):
             self.assertNotEqual(completed.returncode, 0)
             self.assertIn("1920x1080", completed.stderr)
             self.assertIn("1672x941", completed.stderr)
+
+    def test_normalize_slide_comp_outputs_uniform_4k(self) -> None:
+        from PIL import Image
+
+        with tempfile.TemporaryDirectory() as tmp:
+            source = Path(tmp) / "raw.png"
+            output = Path(tmp) / "slide-001-comp.png"
+            report = Path(tmp) / "normalization.json"
+            Image.new("RGB", (1672, 941), (255, 255, 255)).save(source)
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    str(NORMALIZE_SCRIPT),
+                    "--input",
+                    str(source),
+                    "--output",
+                    str(output),
+                    "--manifest",
+                    str(report),
+                ],
+                check=False,
+                text=True,
+                capture_output=True,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            with Image.open(output) as image:
+                self.assertEqual(image.size, (3840, 2160))
+            payload = json.loads(report.read_text(encoding="utf-8"))
+            self.assertEqual(payload["output_dimensions_px"], {"width": 3840, "height": 2160})
+            self.assertTrue(payload["sharpen_after_resize"])
+
+    def test_prepare_icon_assets_outputs_transparent_padded_png(self) -> None:
+        from PIL import Image, ImageDraw
+
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp)
+            source = workspace / "slides" / "style-lane-A" / "slide-001-comp.png"
+            source.parent.mkdir(parents=True)
+            image = Image.new("RGBA", (400, 300), (255, 255, 255, 255))
+            draw = ImageDraw.Draw(image)
+            draw.rectangle((120, 90, 170, 140), fill=(220, 0, 0, 255))
+            image.save(source)
+            manifest = workspace / "assets" / "icon-manifests" / "icon_asset_manifest.json"
+            manifest.parent.mkdir(parents=True)
+            output = workspace / "assets" / "icons" / "style-lane-A" / "slide-001-icon-01.png"
+            manifest.write_text(
+                json.dumps(
+                    {
+                        "status": "ready",
+                        "default_padding_px": 16,
+                        "default_crop_expansion_px": 12,
+                        "white_threshold": 246,
+                        "minimum_output_icon_px": 256,
+                        "icons": [
+                            {
+                                "id": "slide-001-icon-01",
+                                "source_image_path": "slides/style-lane-A/slide-001-comp.png",
+                                "bbox_px": {"left": 112, "top": 82, "width": 70, "height": 70},
+                                "output_path": "assets/icons/style-lane-A/slide-001-icon-01.png",
+                                "padding_px": 16,
+                            }
+                        ],
+                    },
+                    ensure_ascii=False,
+                    indent=2,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            report = workspace / "assets" / "icon-manifests" / "icon_asset_report.json"
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    str(ICON_SCRIPT),
+                    "--manifest",
+                    str(manifest),
+                    "--workspace",
+                    str(workspace),
+                    "--report",
+                    str(report),
+                    "--strict",
+                ],
+                check=False,
+                text=True,
+                capture_output=True,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            with Image.open(output) as icon:
+                self.assertEqual(icon.mode, "RGBA")
+                self.assertEqual(icon.getpixel((0, 0))[3], 0)
+                self.assertGreaterEqual(icon.size[0], 256)
+                self.assertGreaterEqual(icon.size[1], 256)
+                alpha_bbox = icon.getchannel("A").getbbox()
+                self.assertIsNotNone(alpha_bbox)
+                assert alpha_bbox is not None
+                self.assertGreater(alpha_bbox[0], 0)
+                self.assertGreater(alpha_bbox[1], 0)
+                self.assertLess(alpha_bbox[2], icon.size[0])
+                self.assertLess(alpha_bbox[3], icon.size[1])
+            payload = json.loads(report.read_text(encoding="utf-8"))
+            self.assertEqual(payload["status"], "completed")
+            self.assertTrue(payload["results"][0]["transparent_background"])
+            self.assertTrue(payload["results"][0]["edge_clear"])
 
     def test_init_workspace_creates_slide_intent_artifacts(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -453,8 +615,10 @@ class PipelineSmokeTests(unittest.TestCase):
             workspace = Path(tmp)
             (workspace / "slides").mkdir()
             (workspace / "styles").mkdir()
+            write_gate_scaffolding(workspace)
             comp = workspace / "slides" / "slide-001-comp.png"
             comp.write_bytes(fake_png())
+            (workspace / "slides" / "raw" / "slide-001-imagegen.png").write_bytes(fake_png())
             contact = workspace / "styles" / "option-a-contact-sheet.png"
             contact.write_bytes(fake_png(2400, 1350))
             deck_spec = {
@@ -473,6 +637,7 @@ class PipelineSmokeTests(unittest.TestCase):
                     {
                         "slide_id": "slide-001",
                         "comp_path": "slides/slide-001-comp.png",
+                        "normalization": normalization_record(1),
                         "image_source_type": "imagegen",
                         "visual_archetype": "system map",
                         "reconstruction_mode": "pixel_locked_hybrid",
@@ -516,7 +681,9 @@ class PipelineSmokeTests(unittest.TestCase):
             workspace = Path(tmp)
             (workspace / "slides").mkdir()
             (workspace / "styles").mkdir()
+            write_gate_scaffolding(workspace)
             (workspace / "slides" / "slide-001-comp.png").write_bytes(fake_png())
+            (workspace / "slides" / "raw" / "slide-001-imagegen.png").write_bytes(fake_png())
             (workspace / "styles" / "option-a-contact-sheet.png").write_bytes(fake_png(2400, 1350))
             deck_spec = {
                 "deck": {"slide_count": 1},
@@ -544,6 +711,7 @@ class PipelineSmokeTests(unittest.TestCase):
                     {
                         "slide_id": "slide-001",
                         "comp_path": "slides/slide-001-comp.png",
+                        "normalization": normalization_record(1),
                         "image_source_type": "imagegen",
                         "visual_archetype": "system map",
                         "reconstruction_mode": "pixel_locked_hybrid",
@@ -576,7 +744,9 @@ class PipelineSmokeTests(unittest.TestCase):
             workspace = Path(tmp)
             (workspace / "slides").mkdir()
             (workspace / "styles").mkdir()
+            write_gate_scaffolding(workspace)
             (workspace / "slides" / "slide-001-comp.png").write_bytes(fake_png())
+            (workspace / "slides" / "raw" / "slide-001-imagegen.png").write_bytes(fake_png())
             (workspace / "slides" / "slide-001.html").write_text("<html></html>", encoding="utf-8")
             (workspace / "styles" / "option-a-contact-sheet.png").write_bytes(fake_png(2400, 1350))
             deck_spec = {
@@ -595,6 +765,7 @@ class PipelineSmokeTests(unittest.TestCase):
                     {
                         "slide_id": "slide-001",
                         "comp_path": "slides/slide-001-comp.png",
+                        "normalization": normalization_record(1),
                         "image_source_type": "imagegen",
                         "visual_archetype": "system map",
                         "reconstruction_mode": "pixel_locked_hybrid",
@@ -626,8 +797,11 @@ class PipelineSmokeTests(unittest.TestCase):
             workspace = Path(tmp)
             (workspace / "slides").mkdir()
             (workspace / "styles").mkdir()
+            write_gate_scaffolding(workspace)
             (workspace / "slides" / "slide-001-comp.png").write_bytes(fake_png(3840, 2160))
             (workspace / "slides" / "slide-002-comp.png").write_bytes(fake_png(1920, 1080))
+            (workspace / "slides" / "raw" / "slide-001-imagegen.png").write_bytes(fake_png(3840, 2160))
+            (workspace / "slides" / "raw" / "slide-002-imagegen.png").write_bytes(fake_png(1920, 1080))
             (workspace / "styles" / "option-a-contact-sheet.png").write_bytes(fake_png(2400, 1350))
             deck_spec = {
                 "deck": {"slide_count": 2},
@@ -651,6 +825,7 @@ class PipelineSmokeTests(unittest.TestCase):
                     {
                         "slide_id": f"slide-{idx:03d}",
                         "comp_path": f"slides/slide-{idx:03d}-comp.png",
+                        "normalization": normalization_record(idx),
                         "image_source_type": "imagegen",
                         "visual_archetype": "system map",
                         "reconstruction_mode": "pixel_locked_hybrid",
@@ -681,7 +856,9 @@ class PipelineSmokeTests(unittest.TestCase):
             workspace = Path(tmp)
             (workspace / "slides").mkdir()
             (workspace / "styles").mkdir()
+            write_gate_scaffolding(workspace)
             (workspace / "slides" / "slide-001-comp.png").write_bytes(fake_png())
+            (workspace / "slides" / "raw" / "slide-001-imagegen.png").write_bytes(fake_png())
             (workspace / "styles" / "option-a-contact-sheet.png").write_bytes(fake_png(2400, 1350))
             deck_spec = {
                 "deck": {"slide_count": 1},
@@ -706,6 +883,7 @@ class PipelineSmokeTests(unittest.TestCase):
                     {
                         "slide_id": "slide-001",
                         "comp_path": "slides/slide-001-comp.png",
+                        "normalization": normalization_record(1),
                         "image_source_type": "imagegen",
                         "visual_archetype": "system map",
                         "reconstruction_mode": "pixel_locked_hybrid",
@@ -731,6 +909,82 @@ class PipelineSmokeTests(unittest.TestCase):
             self.assertTrue(any("comp_generation_mode" in item for item in failures))
             self.assertTrue(any("parallel_page_subagents_used" in item for item in failures))
             self.assertTrue(any("generation_owner" in item for item in failures))
+
+    def test_visual_contract_allows_style_sharded_serial_generation(self) -> None:
+        gate_module = load_gate_module()
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp)
+            (workspace / "slides" / "style-lane-A").mkdir(parents=True)
+            (workspace / "slides" / "raw" / "style-lane-A").mkdir(parents=True)
+            (workspace / "styles").mkdir()
+            write_gate_scaffolding(workspace)
+            (workspace / "slides" / "style-lane-A" / "slide-001-comp.png").write_bytes(fake_png())
+            (workspace / "slides" / "raw" / "style-lane-A" / "slide-001-imagegen.png").write_bytes(fake_png())
+            (workspace / "styles" / "option-a-contact-sheet.png").write_bytes(fake_png(2400, 1350))
+            deck_spec = {
+                "deck": {"slide_count": 1},
+                "slides": [{"slide_id": "slide-001"}],
+            }
+            normalization = normalization_record(1)
+            normalization.update(
+                {
+                    "raw_imagegen_output_path": "slides/raw/style-lane-A/slide-001-imagegen.png",
+                    "output_path": "slides/style-lane-A/slide-001-comp.png",
+                }
+            )
+            visual_contract = {
+                **visual_contract_generation_defaults(),
+                "selected_style": "Option A",
+                "selected_styles": ["Option A"],
+                "contact_sheet": "styles/option-a-contact-sheet.png",
+                "per_slide_comps_complete": True,
+                "comp_generation_mode": "style_sharded_serial_imagegen",
+                "parallel_style_agents_used": True,
+                "parallel_page_subagents_used": False,
+                "comp_style_lock": {
+                    **visual_contract_generation_defaults()["comp_style_lock"],
+                    "generation_owner": "style_agent",
+                },
+                "style_runs": [
+                    {
+                        "style_lane_id": "style-lane-A",
+                        "option_id": "A",
+                        "selected_for_pptx": True,
+                        "per_slide_comps_complete": True,
+                        "normalized_4k_complete": True,
+                    }
+                ],
+                "default_reconstruction_mode": "pixel_locked_hybrid",
+                "pixel_locked_hybrid_required": True,
+                "image_quality_policy": quality_policy(),
+                "slides": [
+                    {
+                        "slide_id": "slide-001",
+                        "comp_path": "slides/style-lane-A/slide-001-comp.png",
+                        "normalization": normalization,
+                        "image_source_type": "imagegen",
+                        "visual_archetype": "system map",
+                        "reconstruction_mode": "pixel_locked_hybrid",
+                        "clarity_review": clarity_review(),
+                        "style_continuity_review": style_continuity_review(),
+                        "comp_backplate": {
+                            "strategy": "full_slide",
+                            "path": "slides/style-lane-A/slide-001-comp.png",
+                            "insert_first": True,
+                        },
+                        "text_mask_plan": [
+                            {"region": "title", "method": "shape mask", "reason": "editable title overlay"}
+                        ],
+                        "editable_overlay_plan": {
+                            "visible_native_text_overlay": True,
+                            "visible_overlay_count": 2,
+                        },
+                    }
+                ],
+            }
+            failures: list[str] = []
+            gate_module.check_visual_contract(workspace, deck_spec, visual_contract, failures)
+            self.assertEqual(failures, [])
 
     def test_style_gate_rejects_content_strategy_as_visual_style(self) -> None:
         gate_module = load_gate_module()

@@ -424,6 +424,27 @@ def check_image_quality_policy(policy, failures: list[str], owner: str) -> dict:
         failures.append(
             f"{owner} image_quality_policy.minimum_acceptable_comp_bytes must be at least {minimum_bytes_floor}"
         )
+    postprocess = policy.get("postprocess_policy") or {}
+    if not isinstance(postprocess, dict) or not postprocess:
+        failures.append(f"{owner} image_quality_policy.postprocess_policy is missing")
+    else:
+        if postprocess.get("enabled") is not True:
+            failures.append(f"{owner} image_quality_policy.postprocess_policy.enabled must be true")
+        if postprocess.get("normalize_every_comp") is not True:
+            failures.append(f"{owner} image_quality_policy.postprocess_policy.normalize_every_comp must be true")
+        target = postprocess.get("target_px") or {}
+        if safe_int(target.get("width")) < 3840 or safe_int(target.get("height")) < 2160:
+            failures.append(f"{owner} image_quality_policy.postprocess_policy.target_px must be at least 3840x2160")
+        if postprocess.get("local_repair_script") != "scripts/normalize_slide_comp.py":
+            failures.append(
+                f"{owner} image_quality_policy.postprocess_policy.local_repair_script must be scripts/normalize_slide_comp.py"
+            )
+        if postprocess.get("save_raw_imagegen_output") is not True:
+            failures.append(f"{owner} image_quality_policy.postprocess_policy.save_raw_imagegen_output must be true")
+        if postprocess.get("same_output_dimensions_required") is not True:
+            failures.append(f"{owner} image_quality_policy.postprocess_policy.same_output_dimensions_required must be true")
+        if postprocess.get("downstream_uses_normalized_comp") is not True:
+            failures.append(f"{owner} image_quality_policy.postprocess_policy.downstream_uses_normalized_comp must be true")
     if fallback_enabled:
         if fallback_policy.get("deck_wide_tier_lock") is not True:
             failures.append(f"{owner} resolution_fallback_policy.deck_wide_tier_lock must be true")
@@ -711,8 +732,15 @@ def check_style_gate(
         )
     if selection_mode == "full_automation" and not style_brief.get("full_automation_trigger"):
         failures.append("style_brief.json full_automation requires full_automation_trigger")
-    if not style_brief.get("selected_option"):
-        failures.append("style_brief.json selected_option is empty; user or automation did not select a style")
+    selected_options = [
+        str(item)
+        for item in (style_brief.get("selected_options") or [])
+        if str(item).strip()
+    ]
+    if style_brief.get("selected_option") and str(style_brief.get("selected_option")) not in selected_options:
+        selected_options.append(str(style_brief.get("selected_option")))
+    if not selected_options:
+        failures.append("style_brief.json selected_option/selected_options is empty; user or automation did not select a style")
     candidates = style_brief.get("candidate_directions") or []
     selected_option = style_brief.get("selected_option")
     if count and len(candidates) < count:
@@ -760,8 +788,9 @@ def check_style_gate(
                     )
     if count > 1 and len(set(families)) < min(count, len(candidates)):
         failures.append("candidate directions must use distinct aesthetic_family values")
-    if selected_option and candidate_options and selected_option not in candidate_options:
-        failures.append(f"style_brief.json selected_option {selected_option!r} is not in candidate_directions")
+    for option in selected_options:
+        if candidate_options and option not in candidate_options:
+            failures.append(f"style_brief.json selected option {option!r} is not in candidate_directions")
     lanes = style_brief.get("style_lanes") or []
     if count and len(lanes) < count:
         failures.append(f"style_brief.json has {len(lanes)} style_lanes but direction_count is {count}")
@@ -826,8 +855,9 @@ def check_style_gate(
                 failures.append(f"style lane {idx} invariance_check.{key} must be true")
         if invariance.get("violations"):
             failures.append(f"style lane {idx} has narrative invariance violations")
-    if selected_option and lane_options and selected_option not in lane_options:
-        failures.append(f"style_brief.json selected_option {selected_option!r} is not in style_lanes")
+    for option in selected_options:
+        if lane_options and option not in lane_options:
+            failures.append(f"style_brief.json selected option {option!r} is not in style_lanes")
     sheets = list_paths(style_brief.get("style_contact_sheets"))
     if count and len(sheets) < count:
         failures.append(
@@ -897,8 +927,9 @@ def check_style_gate(
                     f"style contact sheet must be at least {min_contact_width}x{min_contact_height}; "
                     f"got {width}x{height}: {path}"
                 )
-    if selected_option and sheet_options and selected_option not in sheet_options:
-        failures.append(f"style_brief.json selected_option {selected_option!r} is not in style_contact_sheets")
+    for option in selected_options:
+        if sheet_options and option not in sheet_options:
+            failures.append(f"style_brief.json selected option {option!r} is not in style_contact_sheets")
 
 
 def check_reconstruction_manifest(
@@ -985,6 +1016,55 @@ def check_reconstruction_manifest(
                 )
 
 
+def check_icon_asset_policy(workspace: Path, visual_contract: dict, failures: list[str]) -> None:
+    policy = visual_contract.get("icon_asset_policy") or {}
+    if not isinstance(policy, dict) or not policy:
+        failures.append("visual_contract.json icon_asset_policy is missing")
+        return
+    if policy.get("enabled") is not True:
+        failures.append("visual_contract.json icon_asset_policy.enabled must be true")
+    if policy.get("processor_script") != "scripts/prepare_icon_assets.py":
+        failures.append("visual_contract.json icon_asset_policy.processor_script must be scripts/prepare_icon_assets.py")
+    if policy.get("transparent_png_required") is not True:
+        failures.append("visual_contract.json icon_asset_policy.transparent_png_required must be true")
+    if safe_int(policy.get("minimum_transparent_padding_px")) < 1:
+        failures.append("visual_contract.json icon_asset_policy.minimum_transparent_padding_px must be at least 1")
+    if safe_int(policy.get("crop_expansion_px")) < 1:
+        failures.append("visual_contract.json icon_asset_policy.crop_expansion_px must be at least 1")
+    if safe_int(policy.get("minimum_output_icon_px")) < 128:
+        failures.append("visual_contract.json icon_asset_policy.minimum_output_icon_px must be at least 128")
+    if policy.get("forbid_edge_touching_colored_pixels") is not True:
+        failures.append("visual_contract.json icon_asset_policy.forbid_edge_touching_colored_pixels must be true")
+    if policy.get("use_processed_icons_in_pptx") is not True:
+        failures.append("visual_contract.json icon_asset_policy.use_processed_icons_in_pptx must be true")
+    manifest_path = require_file(
+        workspace,
+        policy.get("manifest_path") or "assets/icon-manifests/icon_asset_manifest.json",
+        "icon asset manifest",
+        failures,
+    )
+    if manifest_path and manifest_path.exists():
+        manifest = load_json(manifest_path, failures)
+        if manifest.get("status") not in {"draft", "ready", "processed", "approved"}:
+            failures.append("icon asset manifest status must be draft, ready, processed, or approved")
+
+
+def check_render_fix_loop_policy(visual_contract: dict, failures: list[str]) -> dict:
+    loop = visual_contract.get("pptx_render_fix_loop") or {}
+    if not isinstance(loop, dict) or not loop:
+        failures.append("visual_contract.json pptx_render_fix_loop is missing")
+        return {}
+    if loop.get("enabled") is not True:
+        failures.append("visual_contract.json pptx_render_fix_loop.enabled must be true")
+    if safe_int(loop.get("minimum_rounds")) < 9:
+        failures.append("visual_contract.json pptx_render_fix_loop.minimum_rounds must be at least 9")
+    if not loop.get("rounds_log_path"):
+        failures.append("visual_contract.json pptx_render_fix_loop.rounds_log_path is missing")
+    if loop.get("block_on_unresolved_p0_p1") is not True:
+        failures.append("visual_contract.json pptx_render_fix_loop.block_on_unresolved_p0_p1 must be true")
+    return loop
+
+
 def check_visual_contract(workspace: Path, deck_spec: dict, visual_contract: dict, failures: list[str]) -> None:
     expected_count = deck_spec.get("deck", {}).get("slide_count") or len(deck_spec.get("slides", []))
     slides = visual_contract.get("slides", [])
@@ -1001,9 +1081,23 @@ def check_visual_contract(workspace: Path, deck_spec: dict, visual_contract: dic
     preferred_px = quality_policy.get("preferred_single_slide_canvas_px") or quality_policy.get("requested_single_slide_canvas_px") or {}
     preferred_width = safe_int(preferred_px.get("width")) or 3840
     preferred_height = safe_int(preferred_px.get("height")) or 2160
+    postprocess_policy = quality_policy.get("postprocess_policy") if isinstance(quality_policy, dict) else {}
+    postprocess_target = (3840, 2160)
+    if isinstance(postprocess_policy, dict):
+        target = postprocess_policy.get("target_px") or {}
+        postprocess_target = (safe_int(target.get("width")) or 3840, safe_int(target.get("height")) or 2160)
+    check_icon_asset_policy(workspace, visual_contract, failures)
+    check_render_fix_loop_policy(visual_contract, failures)
     check_no_html_surrogates(workspace, failures)
-    if not visual_contract.get("selected_style"):
-        failures.append("visual_contract.json selected_style is empty")
+    selected_styles = [
+        str(item)
+        for item in (visual_contract.get("selected_styles") or [])
+        if str(item).strip()
+    ]
+    if visual_contract.get("selected_style") and str(visual_contract.get("selected_style")) not in selected_styles:
+        selected_styles.append(str(visual_contract.get("selected_style")))
+    if not selected_styles:
+        failures.append("visual_contract.json selected_style/selected_styles is empty")
     contact_sheet = visual_contract.get("contact_sheet")
     if not contact_sheet and not workflow_reconstruction_mode:
         failures.append("visual_contract.json contact_sheet is empty")
@@ -1025,12 +1119,21 @@ def check_visual_contract(workspace: Path, deck_spec: dict, visual_contract: dic
         )
     if not workflow_reconstruction_mode:
         comp_generation_mode = visual_contract.get("comp_generation_mode")
+        parallel_style_agents_used = visual_contract.get("parallel_style_agents_used") is True
         parallel_used = visual_contract.get("parallel_page_subagents_used") is True
         parallel_accepted = visual_contract.get("explicit_parallel_comp_generation_accepted") is True
-        if comp_generation_mode != "main_agent_serial_imagegen" and not parallel_accepted:
+        allowed_mode = comp_generation_mode in {
+            "main_agent_serial_imagegen",
+            "style_sharded_serial_imagegen",
+        }
+        if not allowed_mode and not parallel_accepted:
             failures.append(
                 "visual_contract.json comp_generation_mode must be main_agent_serial_imagegen "
-                "unless explicit_parallel_comp_generation_accepted is true"
+                "or style_sharded_serial_imagegen unless explicit_parallel_comp_generation_accepted is true"
+            )
+        if comp_generation_mode == "style_sharded_serial_imagegen" and not parallel_style_agents_used:
+            failures.append(
+                "visual_contract.json style_sharded_serial_imagegen requires parallel_style_agents_used=true"
             )
         if parallel_used and not parallel_accepted:
             failures.append(
@@ -1042,10 +1145,14 @@ def check_visual_contract(workspace: Path, deck_spec: dict, visual_contract: dic
             failures.append("visual_contract.json comp_style_lock must be an object")
             comp_style_lock = {}
         else:
-            if comp_style_lock.get("generation_owner") != "main_agent" and not parallel_accepted:
+            owner = comp_style_lock.get("generation_owner")
+            allowed_owners = {"main_agent"}
+            if comp_generation_mode == "style_sharded_serial_imagegen":
+                allowed_owners.add("style_agent")
+            if owner not in allowed_owners and not parallel_accepted:
                 failures.append(
                     "visual_contract.json comp_style_lock.generation_owner must be main_agent "
-                    "unless explicit parallel page-subagent generation was accepted"
+                    "or style_agent for style-sharded generation unless explicit parallel page-subagent generation was accepted"
                 )
             if comp_style_lock.get("chrome_locked") is not True:
                 failures.append("visual_contract.json comp_style_lock.chrome_locked must be true")
@@ -1119,6 +1226,34 @@ def check_visual_contract(workspace: Path, deck_spec: dict, visual_contract: dic
                 f"slide {idx:03d} approved comp file must be at least {minimum_bytes} bytes; "
                 f"got {actual_bytes}: {path}"
             )
+        normalization = slide.get("normalization") or {}
+        if isinstance(postprocess_policy, dict) and postprocess_policy.get("enabled") is True and not workflow_reconstruction_mode:
+            if not isinstance(normalization, dict) or not normalization:
+                failures.append(f"slide {idx:03d} missing normalization record for postprocessed 4K comp")
+                normalization = {}
+            if normalization.get("status") != "completed":
+                failures.append(f"slide {idx:03d} normalization.status must be completed")
+            if normalization.get("local_repair_applied") is not True:
+                failures.append(f"slide {idx:03d} normalization.local_repair_applied must be true")
+            if normalization.get("script_path") != "scripts/normalize_slide_comp.py":
+                failures.append(f"slide {idx:03d} normalization.script_path must be scripts/normalize_slide_comp.py")
+            output_dimensions = normalization.get("output_dimensions_px") or {}
+            if (
+                safe_int(output_dimensions.get("width")) != postprocess_target[0]
+                or safe_int(output_dimensions.get("height")) != postprocess_target[1]
+            ):
+                failures.append(
+                    f"slide {idx:03d} normalization.output_dimensions_px must be "
+                    f"{postprocess_target[0]}x{postprocess_target[1]}"
+                )
+            normalized_output = normalization.get("output_path")
+            if normalized_output and comp and Path(normalized_output).name != Path(comp).name:
+                failures.append(f"slide {idx:03d} normalization.output_path must match comp_path")
+            raw_output = normalization.get("raw_imagegen_output_path") or slide.get("raw_comp_path")
+            if postprocess_policy.get("save_raw_imagegen_output") is True and not raw_output:
+                failures.append(f"slide {idx:03d} normalization.raw_imagegen_output_path is required")
+            elif raw_output:
+                require_file(workspace, raw_output, f"slide {idx:03d} raw ImageGen output", failures)
         if not slide.get("visual_archetype"):
             failures.append(f"slide {idx:03d} missing visual_archetype in visual_contract.json")
         clarity = slide.get("clarity_review")
@@ -1250,6 +1385,26 @@ def check_visual_contract(workspace: Path, deck_spec: dict, visual_contract: dic
                 failures.append(
                     f"slide {idx:03d} editable_overlay_plan must be an object with visible native overlay coverage"
                 )
+        processed_icons = slide.get("processed_icon_assets") or []
+        if processed_icons and isinstance(processed_icons, list):
+            for icon_idx, icon in enumerate(processed_icons, 1):
+                if not isinstance(icon, dict):
+                    failures.append(f"slide {idx:03d} processed icon {icon_idx} must be an object")
+                    continue
+                icon_path = require_file(
+                    workspace,
+                    icon.get("output_path"),
+                    f"slide {idx:03d} processed icon {icon_idx}",
+                    failures,
+                )
+                if icon_path and icon_path.suffix.lower() != ".png":
+                    failures.append(f"slide {idx:03d} processed icon {icon_idx} must be a PNG")
+                if icon.get("transparent_background") is not True:
+                    failures.append(f"slide {idx:03d} processed icon {icon_idx} transparent_background must be true")
+                if safe_int(icon.get("transparent_padding_px")) < 1:
+                    failures.append(f"slide {idx:03d} processed icon {icon_idx} transparent_padding_px must be at least 1")
+                if icon.get("edge_clear") is not True:
+                    failures.append(f"slide {idx:03d} processed icon {icon_idx} edge_clear must be true")
     if resolution_fallback_used and not workflow_reconstruction_mode:
         fallback_log = quality_policy.get("resolution_fallback_policy", {}).get(
             "record_log_path",
@@ -1275,7 +1430,7 @@ def check_reviews(workspace: Path, deck_spec: dict, failures: list[str]) -> None
         )
 
 
-def check_final(workspace: Path, failures: list[str]) -> None:
+def check_final(workspace: Path, visual_contract: dict, failures: list[str]) -> None:
     final_council = workspace / "qa" / "final-council.md"
     qa_report = workspace / "qa_report.md"
     if not final_council.exists():
@@ -1298,6 +1453,20 @@ def check_final(workspace: Path, failures: list[str]) -> None:
     output_pptx = list((workspace / "output").glob("*.pptx"))
     if not output_pptx:
         failures.append("No final PPTX found under output/")
+    loop = visual_contract.get("pptx_render_fix_loop") or {}
+    minimum_rounds = safe_int(loop.get("minimum_rounds")) or 0
+    if minimum_rounds:
+        rounds_log = loop.get("rounds_log_path") or "qa/render-fix/render_fix_rounds.json"
+        rounds_path = require_file(workspace, rounds_log, "render-fix rounds log", failures)
+        if rounds_path and rounds_path.exists():
+            payload = load_json(rounds_path, failures)
+            completed = safe_int(payload.get("completed_rounds"))
+            if completed < minimum_rounds:
+                failures.append(
+                    f"render-fix rounds log completed_rounds must be at least {minimum_rounds}; got {completed}"
+                )
+            if payload.get("unresolved_p0_p1"):
+                failures.append("render-fix rounds log still has unresolved_p0_p1 findings")
 
 
 def main() -> int:
@@ -1385,7 +1554,7 @@ def main() -> int:
             if missing:
                 failures.append("pipeline_state.json stage_history missing: " + ", ".join(sorted(missing)))
     if args.stage == "final":
-        check_final(workspace, failures)
+        check_final(workspace, visual_contract, failures)
 
     result = {
         "status": "FAIL" if failures else "PASS",

@@ -49,6 +49,23 @@ DEFAULT_IMAGE_QUALITY_POLICY = {
     "requested_single_slide_canvas_px": {"width": 3840, "height": 2160},
     "minimum_acceptable_comp_px": {"width": 1920, "height": 1080},
     "minimum_acceptable_comp_bytes": 1 * 1024 * 1024,
+    "postprocess_policy": {
+        "enabled": True,
+        "normalize_every_comp": True,
+        "target_px": {"width": 3840, "height": 2160},
+        "local_repair_script": "scripts/normalize_slide_comp.py",
+        "save_raw_imagegen_output": True,
+        "raw_output_dir": "slides/raw",
+        "normalized_output_suffix": "-comp.png",
+        "upscale_method": "lanczos",
+        "sharpen_after_resize": True,
+        "same_output_dimensions_required": True,
+        "downstream_uses_normalized_comp": True,
+        "limitations": (
+            "Local upscaling/sharpening improves uniformity and edge clarity but cannot recover "
+            "text detail that ImageGen never produced; visual-clarity review remains mandatory."
+        ),
+    },
     "resolution_fallback_policy": {
         "enabled": True,
         "deck_wide_tier_lock": True,
@@ -148,6 +165,30 @@ DEFAULT_COMP_STYLE_LOCK = {
     "generation_owner": "main_agent",
 }
 
+DEFAULT_ICON_ASSET_POLICY = {
+    "enabled": True,
+    "manifest_path": "assets/icon-manifests/icon_asset_manifest.json",
+    "processor_script": "scripts/prepare_icon_assets.py",
+    "transparent_png_required": True,
+    "minimum_transparent_padding_px": 16,
+    "crop_expansion_px": 12,
+    "minimum_output_icon_px": 256,
+    "forbid_edge_touching_colored_pixels": True,
+    "use_processed_icons_in_pptx": True,
+    "notes": (
+        "Before PPTX reconstruction, crop simple reusable icons from approved comps, remove light "
+        "backgrounds, add transparent padding, and place processed icons back at the matching PPTX coordinates."
+    ),
+}
+
+DEFAULT_PPTX_RENDER_FIX_LOOP = {
+    "enabled": True,
+    "minimum_rounds": 9,
+    "rounds_log_path": "qa/render-fix/render_fix_rounds.json",
+    "compare_against": "approved 4K normalized comps",
+    "block_on_unresolved_p0_p1": True,
+}
+
 
 def slugify(value: str) -> str:
     value = value.strip().lower()
@@ -178,7 +219,10 @@ def main() -> int:
     dirs = [
         "input",
         "slides",
+        "slides/raw",
         "assets",
+        "assets/icons",
+        "assets/icon-manifests",
         "preview",
         "styles",
         "layout",
@@ -192,6 +236,7 @@ def main() -> int:
         "qa/reviews/reconstruction-only",
         "qa/reviews/pptx-preview",
         "qa/reviews/final-council",
+        "qa/render-fix",
         "prompts",
         "slide-modules",
         "output",
@@ -439,6 +484,13 @@ def main() -> int:
         "style_lanes": [],
         "selected_option": "",
         "style_contact_sheets": [],
+        "selected_options": [],
+        "pptx_conversion_selection": {
+            "mode": "ask_user | full_automation",
+            "selected_style_lane_ids": [],
+            "allow_multiple_output_decks": True,
+            "user_selection_note": "",
+        },
         "option_safety_status": "not_started",
         "image_quality_policy": DEFAULT_IMAGE_QUALITY_POLICY,
         "imagegen_failure_policy": DEFAULT_IMAGEGEN_FAILURE_POLICY,
@@ -468,15 +520,23 @@ def main() -> int:
     }
     visual_contract = {
         "selected_style": "",
+        "selected_styles": [],
         "contact_sheet": "",
         "template_mode": "hard" if args.mode == "template-following" else "none",
         "template_contact_sheet": "",
         "template_frame_map": "template-frame-map.json",
         "per_slide_comps_complete": False,
         "comp_generation_mode": "main_agent_serial_imagegen",
+        "parallel_style_agents_used": False,
         "parallel_page_subagents_used": False,
         "explicit_parallel_comp_generation_accepted": False,
         "comp_style_lock": DEFAULT_COMP_STYLE_LOCK,
+        "style_runs": [],
+        "pptx_conversion_selection": {
+            "selected_style_lane_ids": [],
+            "produce_one_pptx_per_selected_style": True,
+            "output_naming_rule": "output/<deck-slug>-<style-lane-id>.pptx",
+        },
         "downgrade_mode": False,
         "explicit_downgrade_accepted": False,
         "comp_is_construction_drawing": True,
@@ -484,6 +544,8 @@ def main() -> int:
         "pixel_locked_hybrid_required": True,
         "minimum_non_title_rich_visual_ratio": 0.6,
         "image_quality_policy": DEFAULT_IMAGE_QUALITY_POLICY,
+        "icon_asset_policy": DEFAULT_ICON_ASSET_POLICY,
+        "pptx_render_fix_loop": DEFAULT_PPTX_RENDER_FIX_LOOP,
         "slides": [],
     }
     reconstruction_manifest = {
@@ -504,9 +566,28 @@ def main() -> int:
             "native_text_boxes_allowed_only_as_transparent_overlays": True,
             "hidden_text_layer_does_not_count_as_editable": True,
             "visible_native_overlays_required": True,
+            "processed_icon_assets_required": True,
+            "minimum_render_fix_rounds": DEFAULT_PPTX_RENDER_FIX_LOOP["minimum_rounds"],
         },
         "slides": [],
         "open_questions": [],
+    }
+    icon_asset_manifest = {
+        "status": "draft",
+        "policy_ref": "visual_contract.json.icon_asset_policy",
+        "source_coordinate_space_px": {"width": 3840, "height": 2160},
+        "default_padding_px": DEFAULT_ICON_ASSET_POLICY["minimum_transparent_padding_px"],
+        "default_crop_expansion_px": DEFAULT_ICON_ASSET_POLICY["crop_expansion_px"],
+        "white_threshold": 246,
+        "icons": [],
+    }
+    render_fix_rounds = {
+        "status": "not_started",
+        "policy_ref": "visual_contract.json.pptx_render_fix_loop",
+        "minimum_rounds": DEFAULT_PPTX_RENDER_FIX_LOOP["minimum_rounds"],
+        "completed_rounds": 0,
+        "rounds": [],
+        "unresolved_p0_p1": [],
     }
 
     files = {
@@ -526,6 +607,8 @@ def main() -> int:
         "template-frame-map.json": json.dumps(template_frame_map, ensure_ascii=False, indent=2) + "\n",
         "visual_contract.json": json.dumps(visual_contract, ensure_ascii=False, indent=2) + "\n",
         "reconstruction_manifest.json": json.dumps(reconstruction_manifest, ensure_ascii=False, indent=2) + "\n",
+        "assets/icon-manifests/icon_asset_manifest.json": json.dumps(icon_asset_manifest, ensure_ascii=False, indent=2) + "\n",
+        "qa/render-fix/render_fix_rounds.json": json.dumps(render_fix_rounds, ensure_ascii=False, indent=2) + "\n",
         "template-audit.md": (
             "# Template Audit\n\n"
             "## Status\nNOT_STARTED\n\n"

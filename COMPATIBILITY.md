@@ -5,6 +5,7 @@ This skill is written for agent runtimes that can:
 - Load local skills from a directory containing `SKILL.md`
 - Generate images through an ImageGen/Image2-like capability
 - Build, render, and export PowerPoint files through a Presentations/PPTX capability
+- Run Python with Pillow for local 4K comp normalization and transparent icon asset preparation
 
 ## Codex
 
@@ -16,6 +17,8 @@ Expected support:
 - Gate checker scripts
 - ImageGen contact-sheet generation
 - Per-slide ImageGen comps
+- Local post-processing of raw ImageGen returns into uniform 4K normalized comps
+- Transparent padded icon-asset preparation before PPTX reconstruction
 - Presentations-based PPTX reconstruction and preview rendering
 - Optional multi-agent or role-based review
 
@@ -34,6 +37,8 @@ Recommended adapter contract:
 image_adapter.generate(prompt, output_path, aspect_ratio="16:9")
 pptx_adapter.create_from_visual_contract(workspace, output_path)
 pptx_adapter.render_previews(pptx_path, preview_dir)
+image_postprocess.normalize_to_4k(raw_path, output_path)
+icon_adapter.prepare_transparent_icons(icon_manifest_path)
 review_adapter.run_roles(stage, artifacts, roles)
 ```
 
@@ -59,4 +64,3 @@ Blocked outputs:
 - Final PPTX export without a PPTX adapter
 - Claimed ImageGen comps without real generated images
 - Claimed review approval without role outputs or documented sequential self-review
-

@@ -274,10 +274,10 @@ Primary request:
 I selected <Option X>. Based on that PPT contact sheet, continue using /imagegen and generate slide <slide_id> as one independent ultra-sharp high-resolution 16:9 PPT visual comp. Use the highest detail/resolution available. Request true 4K 16:9 (`3840x2160`) first, at least 5 MiB. If the service cannot produce 4K after configured attempts, fall back to 2K (`2560x1440`, at least 2 MiB), then 1080p (`1920x1080`, at least 1 MiB). Use the exact same pixel dimensions as every other approved single-slide comp in this deck.
 
 Preflight contract:
-Before calling /imagegen, this prompt must pass `scripts/check_imagegen_comp_asset.py --prompt <prompt-path> --require-fallback-policy`. Keep these constraints explicit: true 4K `3840x2160` first, 2K `2560x1440` fallback, 1080p `1920x1080` final floor, tier file-size minimums, same/identical pixel dimensions across the deck, highest/maximum detail, crisp sharp text/icons/fine lines, no blur/compression artifacts, and no infinite retry loop. If the returned image is lower than 1920x1080, for example 1672x941, reject and regenerate.
+Before calling /imagegen, this prompt must pass `scripts/check_imagegen_comp_asset.py --prompt <prompt-path> --require-fallback-policy`. Keep these constraints explicit: true 4K `3840x2160` first, 2K `2560x1440` fallback, 1080p `1920x1080` target floor, tier file-size minimums, same/identical pixel dimensions across the deck, highest/maximum detail, crisp sharp text/icons/fine lines, no blur/compression artifacts, and no infinite retry loop. If the returned raw image is below the target floor, record it as a raw service fallback and run local normalization only if the visual-clarity reviewer can still approve the normalized output; otherwise regenerate or ask the user.
 
 Execution ownership:
-This is part of a main-agent serial ImageGen pass. Do not delegate final per-slide ImageGen calls to page-owning subagents. Use subagents only for prompt notes or review. Preserve the same `comp_style_lock` from slide to slide.
+This is part of a serial ImageGen pass inside one style lane. Do not delegate final per-slide ImageGen calls to page-owning subagents. If multiple styles were selected, a style-lane subagent may own this entire style and generate all pages for this style serially. Preserve the same `comp_style_lock` from slide to slide within the style lane.
 
 Inputs:
 - Selected contact sheet: <attach or reference image>
@@ -313,8 +313,9 @@ Requirements:
 15. Preserve or improve the selected direction's design quality. Do not simplify the page into plain tables, equal square cards, generic white boxes, or default PPT placeholders unless that exact structure was intentionally selected.
 16. Use a slide-specific visual archetype: system map, maturity arc, loop, funnel, radial, timeline, swimlane, matrix, scorecard, dashboard, process chain, comparison, or title composition. Make the archetype obvious.
 17. Balance editability with visual richness: keep main text regions clean enough to rebuild later, but allow complex depth, background, icon, and diagram layers that can be retained as cropped image assets in PPTX.
-18. Save this generated image as `slides/slide-XXX-comp.png`. Do not use a PPTX preview, template screenshot, output contact sheet, or final render as this comp.
-19. The saved file must meet the active tier minimum: 4K at least 5 MiB, 2K at least 2 MiB, or 1080p at least 1 MiB. If the file is lower than 1920x1080, below the tier file-size minimum, or uses a different pixel size from the rest of the deck, regenerate before review.
+18. Save the raw generated image under `slides/raw/<style-lane-id>/slide-XXX-imagegen.png`. Do not use a PPTX preview, template screenshot, output contact sheet, or final render as this comp.
+19. Immediately run `scripts/normalize_slide_comp.py` to create the downstream approved comp as `slides/<style-lane-id>/slide-XXX-comp.png` or `slides/slide-XXX-comp.png` for a single selected style. The normalized comp must be 3840x2160 and is the only file used for visual review and PPTX reconstruction.
+20. The raw saved file should meet the active tier when the service can provide it: 4K at least 5 MiB, 2K at least 2 MiB, or 1080p at least 1 MiB. If the service returns less, do not retry forever; normalize, review clarity, and regenerate only when titles, key numbers, icons, or fine lines remain blurry/unusable.
 ```
 
 ## 6. Reviewer Iteration Prompt
@@ -343,6 +344,7 @@ Rebuild this slide visual comp as an editable 16:9 PPTX slide.
 
 Inputs:
 - Visual comp image: <slide-XXX-comp.png>
+- Processed icon manifest and report: <assets/icon-manifests/icon_asset_manifest.json, icon_asset_report.json>
 - Deck spec slide: <slide JSON>
 - Slide intent plan slide: <confirmed core idea, proof goal, evidence strategy>
 - Narrative plan slide: <selected treatment JSON>
@@ -381,6 +383,8 @@ Hard requirements:
 17. If comp text would duplicate the editable overlay, mask/cover the comp text region first with matching background patches, then place native editable text above it. If clean masking is impossible, document the exception and prefer visual fidelity over a native-only redraw.
 18. If a manual/native rebuild would lose the approved comp's premium feel, use pixel_locked_hybrid or sliced_hybrid. Do not switch to native_rebuild unless explicitly approved or visually proven.
 19. Before starting PPTX reconstruction, run `check_pipeline_gates.py --stage before-pptx`. If it fails, fix the missing ImageGen/style/review artifacts instead of building from scratch.
+20. Before placing retained icon images, crop and process icons through `scripts/prepare_icon_assets.py --strict`. Insert only transparent PNGs with padding and no clipped colored pixels.
+21. After building the slide/deck, run render/compare/fix loops and record them in `qa/render-fix/render_fix_rounds.json`. Do not finalize the deck until at least 9 rounds are completed with no unresolved P0/P1 findings.
 
 Output:
 - one editable PPTX or slide module as required by the Presentations workflow
@@ -451,10 +455,12 @@ For each slide, identify:
 6. must-preserve composition: focal object, diagram geometry, flow direction, regions, callouts, whitespace, and hierarchy.
 7. native reconstruction plan: editable shapes, text, connectors, charts, tables, icons.
 8. retained image plan: complex textures, photos, official logos, generated diagram layers, or elements impossible to reconstruct without quality loss.
-9. prohibited regressions: table-only, square-card-only, generic card grid, default template, text-heavy version, proof-object downgrade, or native-only redraw without proof.
-10. acceptable simplifications for editability/template fidelity.
-11. reader-facing fidelity targets: what must still match even if pixel-level details differ.
-12. preview comparison target: what visual differences are acceptable after rendering the PPTX preview.
+9. raw comp path, normalized comp path, normalization report path, and final 3840x2160 dimensions.
+10. processed icon assets: which simple icons should be cropped into transparent PNGs, the crop boxes, padding, and target PPTX coordinates.
+11. prohibited regressions: table-only, square-card-only, generic card grid, default template, text-heavy version, proof-object downgrade, or native-only redraw without proof.
+12. acceptable simplifications for editability/template fidelity.
+13. reader-facing fidelity targets: what must still match even if pixel-level details differ.
+14. preview comparison target: what visual differences are acceptable after rendering the PPTX preview.
 
 Output valid `visual_contract.json`.
 
@@ -495,6 +501,8 @@ Rules:
 6. If final slides ignore visual_contract.json by collapsing rich visual comps into table/card grids without documented acceptance, return ITERATE with P1 visual-fidelity findings.
 7. If final slides are logically correct but visually flatter than the approved comps, return ITERATE with P1 reconstruction-fidelity findings unless the user accepted the downgrade.
 8. If the deck used a user template, verify both: the template frame survived and the selected ImageGen comp was faithfully reconstructed inside that frame.
+9. Verify `qa/render-fix/render_fix_rounds.json` shows at least 9 completed render/compare/fix rounds and no unresolved P0/P1 findings.
+10. Verify retained icon assets are transparent PNGs with padding and no clipped colored pixels.
 
 Output:
 - qa/final-council.md

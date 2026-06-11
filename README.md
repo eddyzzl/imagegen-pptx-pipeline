@@ -22,11 +22,12 @@ It can also run in `reconstruction-only` mode when you already have final per-sl
 4. Produce `narrative_matrix.md` so the user can select how each page should present the confirmed content.
 5. Ask for or infer the requested number of visual style directions.
 6. Generate materially different ImageGen contact-sheet directions.
-7. Let the user choose one style direction unless full automation was explicitly requested.
-8. Generate one independent ImageGen comp for every slide.
-9. Review and iterate slide comps before PPTX work, including a visual-clarity gate for resolution, sharp text, icons, fine lines, and compression artifacts.
-10. Reconstruct approved comps as editable PowerPoint slides.
-11. Run final council review before export.
+7. Let the user choose one or multiple style directions unless full automation was explicitly requested.
+8. Generate one independent ImageGen comp for every slide in each selected style. Parallelism is allowed across style lanes; each style lane still generates its pages serially to keep chrome consistent.
+9. Save raw ImageGen returns, normalize every approved comp to uniform 4K (`3840x2160`) locally, then review and iterate slide comps before PPTX work.
+10. Let the user choose one or multiple completed style sets for PPTX conversion.
+11. Prepare retained icons as padded transparent PNG assets, reconstruct approved comps as editable PowerPoint slides, and run at least 9 render/compare/fix rounds.
+12. Run final council review before export.
 
 For `reconstruction-only`, steps 1-6 are skipped. User-supplied per-slide images are registered as approved comps, then each slide is reconstructed as an independent PPTX module and merged after review.
 
@@ -133,12 +134,15 @@ tools/sync-to-codex.sh --codex-home /path/to/.codex
 - Final text and numbers come from `deck_spec.json`.
 - User-supplied templates are hard constraints.
 - Style options must differ by visual system, not just color.
-- ImageGen prompts request the highest available clarity/detail by default. Single-slide comps must be true 4K 16:9 (`3840x2160`) or higher, at least 5 MiB each, and use identical pixel dimensions across the deck before PPTX reconstruction.
+- ImageGen prompts request the highest available clarity/detail by default. Raw single-slide comps request true 4K 16:9 (`3840x2160`) first with bounded 2K/1080p fallback; every accepted downstream comp is then normalized locally to uniform 4K before PPTX reconstruction.
 - Blurry titles, unreadable key numbers, muddy icons, soft fine lines, low-resolution comps, or compression artifacts are P1 blockers unless the user explicitly accepts the risk.
+- Local 4K normalization improves uniform dimensions and edge clarity, but it does not recover unreadable source text or missing icon detail. Visual-clarity review still decides whether to regenerate.
+- Retained icons should be processed into transparent PNGs with padding before being placed into PPTX.
 - PPTX reconstruction defaults to pixel-locked hybrid fidelity: approved comps may be used as full-slide or sliced visual backplates, with visible editable text/numbers/simple shapes overlaid after masking source-image text regions.
 - The workflow does not promise that every complex visual becomes native editable PPT geometry; it preserves complex visuals as image layers when that is required for visual fidelity.
 - Hidden text boxes, speaker notes, off-canvas text, transparent text, or text placed behind a full-slide image do not count as editable reconstruction.
 - For image-to-editable-slide work, use `native_trace_hybrid` when visible editability matters more than exact pixel identity: the source image becomes a coordinate reference, while major cards, text, arrows, icons, charts, and connectors are rebuilt as native PPT elements and verified by render/fix loops.
 - PPTX reconstruction must not downgrade rich comps into generic tables or card grids.
+- Final decks must pass at least 9 render/compare/fix rounds against the approved normalized comps.
 - Reconstruction-only uses page-sharded modules: `slide-modules/slide-XXX.pptx` is reviewed before merging into the final deck.
 - Every user pause is stateful through `pipeline_state.json`.

@@ -3,9 +3,11 @@ name = "imagegen-pptx-pipeline-skill"
 version = "0.1.0"
 description = "Open-source package for the ImageGen PPTX Pipeline agent skill"
 requires-python = ">=3.10"
+dependencies = [
+  "Pillow>=10",
+]
 license = { text = "MIT" }
 
 [tool.ruff]
 line-length = 120
 target-version = "py310"
-

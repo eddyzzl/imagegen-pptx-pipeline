@@ -12,7 +12,7 @@ Write this before every user-facing pause and update it at every stage transitio
   "workspace": "/absolute/path/to/workspace",
   "title": "Deck title",
   "mode": "create | template-following | targeted-edit | reconstruction-only | repair-existing-pptx",
-  "current_stage": "initialized | input_reading | reconstruction_input_lock | content_gate | slide_intent_lock | narrative_selection | style_count | style_selection | single_slide_comps | slide_comp_review | visual_contract | page_reconstruction | pptx_reconstruction | final_review | complete",
+  "current_stage": "initialized | input_reading | reconstruction_input_lock | content_gate | slide_intent_lock | narrative_selection | style_count | style_selection | single_slide_comps | multi_style_comp_selection | slide_comp_review | visual_contract | page_reconstruction | pptx_reconstruction | final_review | complete",
   "awaiting_user": false,
   "required_user_reply": "",
   "next_action": "",
@@ -438,7 +438,7 @@ Use after narrative lock and before style contact-sheet ImageGen calls.
     ],
     "profile_specific_direction_notes": []
   },
-  "image_quality_policy": {
+    "image_quality_policy": {
     "policy_id": "imagegen-max-clarity-v1",
     "enabled": true,
     "prompt_detail_level": "highest_available",
@@ -446,6 +446,20 @@ Use after narrative lock and before style contact-sheet ImageGen calls.
     "requested_single_slide_canvas_px": {"width": 3840, "height": 2160},
     "minimum_acceptable_comp_px": {"width": 1920, "height": 1080},
     "minimum_acceptable_comp_bytes": 1048576,
+    "postprocess_policy": {
+      "enabled": true,
+      "normalize_every_comp": true,
+      "target_px": {"width": 3840, "height": 2160},
+      "local_repair_script": "scripts/normalize_slide_comp.py",
+      "save_raw_imagegen_output": true,
+      "raw_output_dir": "slides/raw",
+      "normalized_output_suffix": "-comp.png",
+      "upscale_method": "lanczos",
+      "sharpen_after_resize": true,
+      "same_output_dimensions_required": true,
+      "downstream_uses_normalized_comp": true,
+      "limitations": "Local repair standardizes and sharpens comps but cannot recover text detail not present in the raw image."
+    },
     "resolution_fallback_policy": {
       "enabled": true,
       "deck_wide_tier_lock": true,
@@ -585,6 +599,13 @@ Use after narrative lock and before style contact-sheet ImageGen calls.
     }
   ],
   "selected_option": "",
+  "selected_options": [],
+  "pptx_conversion_selection": {
+    "mode": "ask_user | full_automation",
+    "selected_style_lane_ids": [],
+    "allow_multiple_output_decks": true,
+    "user_selection_note": ""
+  },
   "style_contact_sheets": [
     {
       "option_id": "A",
@@ -617,6 +638,8 @@ Rules:
 - `selection_mode` may only be `ask_user` or `full_automation`; ad hoc values such as `auto` are invalid.
 - `direction_count: 1` is valid only when the user explicitly requested one direction and `user_requested_count` records it.
 - `style_contact_sheets` must point to style-option images, not final output previews.
+- `selected_options` may contain one or multiple option IDs. If exactly one option is selected, also populate `selected_option` for backward compatibility.
+- After single-slide comps exist for multiple selected styles, ask which style set(s) to convert to PPTX and record that answer in `pptx_conversion_selection.selected_style_lane_ids`.
 - `style_contact_sheets[].generator` must be `imagegen`; rendered PPTX previews, template screenshots, or hand-made placeholders are invalid style previews.
 - `style_variation_scope` must be `visual_aesthetic_only`, and `content_strategy_locked` must be true before ImageGen style exploration.
 - Each candidate direction must have a distinct visual `aesthetic_family`, material/depth treatment, typography/icon/chart language, density, and visual rhythm. Recolored variants fail the style gate.
@@ -629,7 +652,7 @@ Rules:
 - Each lane/contact sheet must record an `invariance_check`. Any violation blocks style selection.
 - Built-in taste guidance should be reflected as portable PPT rules and anti-patterns. External taste sources are optional supplements only and must not be copied wholesale from frontend skills.
 - Template-following directions may not change protected template elements; they must differentiate inside allowed content zones.
-- `image_quality_policy` must request the highest available ImageGen detail/resolution. The policy is used by ImageGen prompts, visual-clarity review, and the `before-pptx` gate. Single-slide comps must request `3840x2160` first, then fall back only through the recorded 2K and 1080p tiers when the service cannot produce 4K. Never accept below `1920x1080`, and all approved comps in one deck must have identical pixel dimensions.
+- `image_quality_policy` must request the highest available ImageGen detail/resolution. The policy is used by ImageGen prompts, visual-clarity review, and the `before-pptx` gate. Single-slide comps must request `3840x2160` first, then fall back only through the recorded 2K and 1080p tiers when the service cannot produce 4K. Every raw ImageGen return must then be normalized with `scripts/normalize_slide_comp.py` to a downstream `3840x2160` approved comp. Never knowingly accept below `1920x1080` raw output without explicit risk acceptance, and all approved normalized comps in one style set must have identical pixel dimensions.
 - `imagegen_failure_policy` must fail closed. ImageGen server/tool failures, timeouts, or long-prompt failures may trigger prompt compression only if locked content, visual density, template constraints, proof-object intent, and aesthetic family are preserved. They may not trigger HTML/browser surrogates, generic PPT fallback, lower information density, or lower visual complexity.
 - `imagegen_retry_log.json` is optional only when every ImageGen call succeeds on the first try. If it exists and contains attempts, each attempt must record failure class, prompt paths, compression strategy, preserved fields, and final status. Any attempt that removed locked content, reduced content/visual density, used HTML/browser output, switched to generic PPT, or marked a failed asset ready blocks style selection.
 - HTML/CSS/browser blueprints, browser screenshots, React pages, canvas renders, PPTX previews, and hand-made static previews are invalid style/contact-sheet or single-slide comp sources.
@@ -812,12 +835,14 @@ Use after ImageGen style selection and single-slide comps, before PPTX authoring
 ```json
 {
   "selected_style": "Option B + template fidelity",
+  "selected_styles": ["Option B"],
   "contact_sheet": "preview/imagegen-style-contact-sheet.png",
   "template_mode": "none | hard",
   "template_contact_sheet": "previews/template-contact-sheet.png",
   "template_frame_map": "template-frame-map.json",
   "per_slide_comps_complete": true,
-  "comp_generation_mode": "main_agent_serial_imagegen",
+  "comp_generation_mode": "main_agent_serial_imagegen | style_sharded_serial_imagegen",
+  "parallel_style_agents_used": false,
   "parallel_page_subagents_used": false,
   "explicit_parallel_comp_generation_accepted": false,
   "comp_style_lock": {
@@ -841,7 +866,26 @@ Use after ImageGen style selection and single-slide comps, before PPTX authoring
       "same recurring typography scale",
       "same border/background/chrome rhythm"
     ],
-    "generation_owner": "main_agent"
+    "generation_owner": "main_agent | style_agent"
+  },
+  "style_runs": [
+    {
+      "style_lane_id": "style-lane-A",
+      "option_id": "A",
+      "selected_for_pptx": true,
+      "contact_sheet": "styles/option-A-contact-sheet.png",
+      "comp_generation_mode": "style_sharded_serial_imagegen",
+      "generation_owner": "style_agent",
+      "per_slide_comps_complete": true,
+      "normalized_4k_complete": true,
+      "comp_style_lock": {},
+      "slides": []
+    }
+  ],
+  "pptx_conversion_selection": {
+    "selected_style_lane_ids": ["style-lane-A"],
+    "produce_one_pptx_per_selected_style": true,
+    "output_naming_rule": "output/<deck-slug>-<style-lane-id>.pptx"
   },
   "downgrade_mode": false,
   "explicit_downgrade_accepted": false,
@@ -857,6 +901,19 @@ Use after ImageGen style selection and single-slide comps, before PPTX authoring
     "requested_single_slide_canvas_px": {"width": 3840, "height": 2160},
     "minimum_acceptable_comp_px": {"width": 1920, "height": 1080},
     "minimum_acceptable_comp_bytes": 1048576,
+    "postprocess_policy": {
+      "enabled": true,
+      "normalize_every_comp": true,
+      "target_px": {"width": 3840, "height": 2160},
+      "local_repair_script": "scripts/normalize_slide_comp.py",
+      "save_raw_imagegen_output": true,
+      "raw_output_dir": "slides/raw",
+      "normalized_output_suffix": "-comp.png",
+      "upscale_method": "lanczos",
+      "sharpen_after_resize": true,
+      "same_output_dimensions_required": true,
+      "downstream_uses_normalized_comp": true
+    },
     "resolution_fallback_policy": {
       "enabled": true,
       "deck_wide_tier_lock": true,
@@ -897,6 +954,24 @@ Use after ImageGen style selection and single-slide comps, before PPTX authoring
       "compression artifacts around text or diagram strokes"
     ]
   },
+  "icon_asset_policy": {
+    "enabled": true,
+    "manifest_path": "assets/icon-manifests/icon_asset_manifest.json",
+    "processor_script": "scripts/prepare_icon_assets.py",
+    "transparent_png_required": true,
+    "minimum_transparent_padding_px": 16,
+    "crop_expansion_px": 12,
+    "minimum_output_icon_px": 256,
+    "forbid_edge_touching_colored_pixels": true,
+    "use_processed_icons_in_pptx": true
+  },
+  "pptx_render_fix_loop": {
+    "enabled": true,
+    "minimum_rounds": 9,
+    "rounds_log_path": "qa/render-fix/render_fix_rounds.json",
+    "compare_against": "approved 4K normalized comps",
+    "block_on_unresolved_p0_p1": true
+  },
   "slides": [
     {
       "slide_id": "slide-001",
@@ -908,6 +983,17 @@ Use after ImageGen style selection and single-slide comps, before PPTX authoring
         "title furniture"
       ],
       "comp_path": "slides/slide-001-comp.png",
+      "raw_comp_path": "slides/raw/style-lane-A/slide-001-imagegen.png",
+      "normalization": {
+        "status": "completed",
+        "raw_imagegen_output_path": "slides/raw/style-lane-A/slide-001-imagegen.png",
+        "output_path": "slides/style-lane-A/slide-001-comp.png",
+        "input_dimensions_px": {"width": 2560, "height": 1440},
+        "output_dimensions_px": {"width": 3840, "height": 2160},
+        "local_repair_applied": true,
+        "script_path": "scripts/normalize_slide_comp.py",
+        "normalization_report_path": "layout/style-lane-A-slide-001-normalization.json"
+      },
       "comp_prompt_path": "prompts/slide-001-comp.txt",
       "comp_review_status": "approved",
       "clarity_review": {
@@ -972,6 +1058,16 @@ Use after ImageGen style selection and single-slide comps, before PPTX authoring
         "editable metric labels and callouts"
       ],
       "retained_images": [],
+      "processed_icon_assets": [
+        {
+          "id": "slide-001-icon-01",
+          "output_path": "assets/icons/style-lane-A/slide-001-icon-01.png",
+          "transparent_background": true,
+          "transparent_padding_px": 16,
+          "edge_clear": true,
+          "pptx_target_region": "top metric icon"
+        }
+      ],
       "allowed_simplifications": [
         "replace textured background with template white background",
         "simplify icon detail while keeping icon placement"
@@ -1000,11 +1096,13 @@ Use after ImageGen style selection and single-slide comps, before PPTX authoring
 Rules:
 
 - `default_reconstruction_mode` should be `pixel_locked_hybrid`; use `native_rebuild` only with preview evidence or explicit user acceptance.
-- In generated-deck mode, `comp_generation_mode` must be `main_agent_serial_imagegen`; page-level subagents may review or draft prompt notes but must not independently call ImageGen for final single-slide comps.
+- In generated-deck mode, `comp_generation_mode` must be `main_agent_serial_imagegen` or `style_sharded_serial_imagegen`; page-level subagents may review or draft prompt notes but must not independently call ImageGen for final single-slide comps.
+- `style_sharded_serial_imagegen` means one style-lane agent generates one whole style set serially. It requires `parallel_style_agents_used=true`, `parallel_page_subagents_used=false`, and `comp_style_lock.generation_owner="style_agent"` or `"main_agent"`.
 - `parallel_page_subagents_used` must be false unless the user explicitly accepted the style-drift risk in `user_decisions.md` and `explicit_parallel_comp_generation_accepted=true`.
 - `comp_style_lock.chrome_locked` must be true. The lock must include at least logo, footer, page number/page marker, and a header/title/section treatment so recurring slide chrome cannot drift between pages.
 - Each slide must have `reconstruction_mode`, `comp_backplate`, `text_mask_plan`, and `editable_overlay_plan` before PPTX authoring.
-- Each slide must have `clarity_review.status=approved` or `user_accepted_risk` before PPTX authoring. Blurry titles, key numbers, icons, fine lines, or comps below the active resolution tier block `before-pptx`. A deck-wide fallback to 2K or 1080p is acceptable only when recorded in `imagegen_resolution_fallback_log.json`; never accept below 1920x1080.
+- Each generated-deck slide must have a completed `normalization` record from `scripts/normalize_slide_comp.py`; `comp_path` points to the normalized 4K image, while `raw_comp_path` points to the raw ImageGen return.
+- Each slide must have `clarity_review.status=approved` or `user_accepted_risk` before PPTX authoring. Blurry titles, key numbers, icons, fine lines, or comps below the normalized 4K target block `before-pptx`. A raw fallback to 2K or 1080p is acceptable only when recorded in `imagegen_resolution_fallback_log.json`; final approved comps still normalize to 3840x2160.
 - Each generated-deck slide must have `style_continuity_review.status=approved`, `matches_comp_style_lock=true`, `page_chrome_consistent=true`, and `recurring_elements_consistent=true` before PPTX authoring.
 - `pixel_locked_hybrid` and `sliced_hybrid` slides must insert the approved comp or cropped comp layers before native overlays.
 - A whole-slide comp backplate is allowed. A final slide that is only a flat image with no editable main information is not allowed unless the user explicitly requested non-editable output.
@@ -1013,8 +1111,77 @@ Rules:
 - If `template_mode` is `hard`, every slide must preserve its mapped source slide's protected elements unless `deviation_notes` and `deviation-log.md` document explicit user acceptance.
 - If `per_slide_comps_complete` is false, PPTX authoring is blocked.
 - Approved comp paths must point to independently generated slide comp images, normally under `slides/slide-XXX-comp.png`. Paths under `preview/`, `output/`, `template-starter-preview/`, or any rendered PPTX preview are invalid.
+- If multiple style sets are selected, `style_runs[]` keeps all completed sets, but the top-level `slides[]` must be the set currently being converted or checked.
+- `icon_asset_policy` requires transparent padded PNG icon assets before PPTX reconstruction. Processed icons may be retained image layers, but they must not be clipped or pasted with unwanted white backgrounds.
+- `pptx_render_fix_loop.minimum_rounds` must be at least 9 and its rounds log must be complete before final export.
 - If `downgrade_mode` is true, `user_decisions.md` must explain that the user accepted a style-inspired rebuild rather than comp-faithful reconstruction. Do not infer this from automation mode.
 - The final council must compare PPTX previews against this file.
+
+## icon_asset_manifest.json
+
+Use before PPTX reconstruction when retaining icons from approved comps as image layers:
+
+```json
+{
+  "status": "draft | ready | processed | approved",
+  "policy_ref": "visual_contract.json.icon_asset_policy",
+  "source_coordinate_space_px": {"width": 3840, "height": 2160},
+  "default_padding_px": 16,
+  "default_crop_expansion_px": 12,
+  "white_threshold": 246,
+  "minimum_output_icon_px": 256,
+  "icons": [
+    {
+      "id": "slide-005-pipeline-icon-01",
+      "slide_id": "slide-005",
+      "source_image_path": "slides/style-lane-A/slide-005-comp.png",
+      "bbox_px": {"left": 310, "top": 620, "width": 96, "height": 96},
+      "output_path": "assets/icons/style-lane-A/slide-005-pipeline-icon-01.png",
+      "padding_px": 16,
+      "pptx_target_region": "pipeline step 1 icon",
+      "notes": "Crop includes full icon stroke and no adjacent text."
+    }
+  ]
+}
+```
+
+Rules:
+
+- Run `scripts/prepare_icon_assets.py --manifest <manifest> --workspace <workspace> --strict`.
+- If strict mode reports possible clipping, enlarge `bbox_px` or `default_crop_expansion_px` and rerun.
+- Processed icons must have transparent background, transparent padding, and `edge_clear=true` before they are inserted into PPTX.
+- Do not use this for large complex diagrams. Use sliced comp backplates for complex visual systems and processed icons only for reusable simple pictograms, badges, and line symbols.
+
+## render_fix_rounds.json
+
+Use after PPTX construction and before final export:
+
+```json
+{
+  "status": "not_started | running | completed | blocked",
+  "policy_ref": "visual_contract.json.pptx_render_fix_loop",
+  "minimum_rounds": 9,
+  "completed_rounds": 9,
+  "rounds": [
+    {
+      "round": 1,
+      "pptx_path": "output/deck-style-lane-A.pptx",
+      "rendered_contact_sheet": "preview/render-round-01-contact-sheet.png",
+      "comparison_source": "approved 4K normalized comps",
+      "findings": ["slide 5 icon clipped", "slide 8 footer shifted"],
+      "fixes_applied": ["replaced icon with padded transparent PNG", "aligned footer group"],
+      "remaining_p0_p1": []
+    }
+  ],
+  "unresolved_p0_p1": []
+}
+```
+
+Rules:
+
+- `completed_rounds` must be at least `visual_contract.json.pptx_render_fix_loop.minimum_rounds`.
+- Each round must render the PPTX or slide modules to PNG and compare against approved normalized 4K comps.
+- Do not set `status="completed"` while `unresolved_p0_p1` is non-empty.
 
 ## reconstruction_manifest.json
 
