@@ -158,10 +158,11 @@ Inputs:
 - Slide intent plan: <confirmed core idea and proof goal for each slide>
 - Narrative plan: <selected_narrative_id and selected_treatment for each slide>
 - Design constraints: <summarize template/reference palette, typography, brand rules, density, footer/page rules>
-- Style lane: <option_id, style_lane_id, aesthetic_family, visual_skin, name, premise, must_differ_by>
+- Style lane: <option_id, style_id, style_source, style_lane_id, style_name, aesthetic_family, visual_signature, name, premise, must_differ_by>
 - Narrative lock: <deck_spec_fingerprint, locked_slide_count, locked_slide_order, invariant fields, forbidden story mutations>
 - Style brief: <deck_profile, direction_count, diversity axes, visual ambition, built-in taste guidance>
 - Image quality policy: <image_quality_policy; request highest available detail/resolution, 4K single-slide comps, at least 5 MiB per approved comp, identical comp dimensions across the deck, crisp text/icons/fine lines, no blur>
+- Built-in style library: <relevant entries from references/style-library.md, including screenshot-inspired categories and style signatures>
 - Built-in PPT taste system: <relevant rules from references/taste-system.md, plus any optional supplemental taste sources>
 - Template contact sheet and source-slide screenshots, if supplied: <attach or reference images>
 - Slide count: <N>
@@ -170,7 +171,7 @@ Output requirements:
 1. Output exactly one contact sheet for Option <option_id>, not multiple options.
 2. The contact sheet must contain all <N> slides in the locked order.
 3. Every thumbnail must be a 16:9 landscape PPT slide.
-4. Express the assigned `aesthetic_family` deeply through visual-only choices: composition grammar, material/depth, typography, density, icon/illustration language, chart rendering, and diagram styling. Do not treat it as a color label.
+4. Express the assigned `style_id` and `visual_signature` deeply through visual-only choices: composition grammar, material/depth, typography, density, icon/illustration language, chart rendering, and diagram styling. Do not treat the style id as a color label.
 5. The option must be a coherent deck system: typography, colors, backgrounds, charts, icons, modules, footers, and page numbers.
 6. Preserve the narrative lock and selected narrative treatment. Use only the confirmed outline and content. Do not add, delete, reorder, replace claims, ignore selected treatment, or invent slides.
 7. Do not invent data, logos, people, product UI, brands, or sources.
@@ -179,7 +180,7 @@ Output requirements:
 10. If a template/source PPTX is supplied, it is a hard frame: preserve its logo/footer/page marker/title furniture/brand chrome and explore different visual expressions only inside its allowed content zones.
 11. Use stronger Image2-driven visual design where appropriate to the already-locked slide proof objects: layered diagrams, radial compositions, arcs, funnels, custom process chains, data-story layouts, premium editorial composition, tactile modules, or restrained glass layers.
 12. Avoid flat all-card/all-table decks unless the source content truly requires them. A deck that looks like only bordered rectangles and plain tables is not an acceptable high-design option.
-13. Make this direction identifiable at thumbnail scale by its assigned visual aesthetic family, not by label text alone.
+13. Make this direction identifiable at thumbnail scale by its assigned canonical style id and visual signature, not by label text alone.
 14. Adapt only taste, density, and visual polish to the deck profile. Do not create product, strategy, evidence, roadmap, or system-map content lanes here; those belong in the locked narrative plan.
 15. Apply the built-in PPT taste system from `taste_guidance`: avoid generic equal-card grids, flat table-only decks, default PPT template feel, and near-identical variants; use profile-appropriate proof objects and crafted diagram language.
 16. If optional external taste sources were recorded, apply only their portable PPT rules and anti-patterns. Do not copy frontend-only interactions, web navigation, hover/GSAP, or responsive layout rules into the slide design.
@@ -187,7 +188,7 @@ Output requirements:
 18. Request maximum available ImageGen fidelity: high-detail rendering, crisp vector-like icons, sharp fine lines, clean anti-aliased typography, high-contrast labels, and no blur/compression artifacts. Note that later single-slide comps must be true 4K and dimension-consistent across the deck.
 19. Use a large, clean contact-sheet canvas. Each thumbnail must be sharp enough to judge composition, icon style, title hierarchy, chart strokes, and module boundaries. Do not accept fuzzy thumbnails.
 20. Do not create HTML/CSS/SVG blueprints, browser screenshots, React pages, canvas renders, PPTX previews, or static mockups as substitutes for ImageGen outputs.
-21. If ImageGen fails and this prompt must be retried shorter, preserve the locked slide order, slide titles, core claims, required data, proof-object intent, template constraints, visual density floor, and assigned aesthetic family. Remove only duplicated prose, internal rationale, repeated constraints, or verbose citations. Do not simplify the deck into sparse cards/tables, do not reduce slide count, and do not switch to HTML or browser-rendered previews.
+21. If ImageGen fails and this prompt must be retried shorter, preserve the locked slide order, slide titles, core claims, required data, proof-object intent, template constraints, visual density floor, assigned style id, visual signature, and aesthetic family. Remove only duplicated prose, internal rationale, repeated constraints, or verbose citations. Do not simplify the deck into sparse cards/tables, do not reduce slide count, and do not switch to HTML or browser-rendered previews.
 
 Visual quality bar:
 The result should look like a polished commercial/executive deck direction, not a generic default PPT template or scattered draft pages. Use ImageGen's strength to explore crafted composition, depth, diagrams, and visual metaphor while staying within source and template constraints.
@@ -211,14 +212,15 @@ Inputs:
 - Deck spec and narrative lock: <locked slide order, claims, proof objects, data, fingerprint>
 - Slide intent plan: <confirmed core idea and proof goal for each slide>
 - Narrative plan: <selected narrative treatment for each slide>
-- Style lanes: <all option_id, style_lane_id, aesthetic_family, premise>
+- Style lanes: <all option_id, style_id, style_source, style_lane_id, style_name, aesthetic_family, visual_signature, premise>
+- Built-in style library: <references/style-library.md relevant entries>
 - Built-in PPT taste system: <relevant rules>
 - Template contact sheet and source-slide screenshots, if supplied: <attach/reference>
 
 Requirements:
 1. Output exactly <K> labeled contact sheets.
 2. Each option must preserve the same deck narrative lock and slide order.
-3. Each option must express a different aesthetic family, not merely recolor a layout.
+3. Each option must express a different canonical style id and aesthetic family, not merely recolor a layout.
 4. Do not invent, delete, reorder, or rewrite content.
 5. Record fallback use in `style_brief.json.generation_mode=single_prompt_fallback` and explain why independent lanes were unavailable.
 6. If the fallback prompt has to be shortened, preserve the locked content and visual density floor; shortening is allowed only by removing duplicated prose, not by removing slide content or diagram requirements.

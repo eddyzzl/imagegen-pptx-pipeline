@@ -209,8 +209,20 @@ def taste_guidance() -> dict:
     return {
         "enabled": True,
         "sources": [
-            {"name": "built-in-ppt-taste-system", "path": "references/taste-system.md"}
+            {"name": "built-in-ppt-taste-system", "path": "references/taste-system.md"},
+            {"name": "built-in-ppt-style-library", "path": "references/style-library.md"},
         ],
+    }
+
+
+def style_library() -> dict:
+    return {
+        "enabled": True,
+        "sources": [
+            {"name": "built-in-ppt-style-library", "path": "references/style-library.md"},
+        ],
+        "style_options_must_remain_visual_only": True,
+        "must_not_use_third_party_logos_without_assets": True,
     }
 
 
@@ -1025,6 +1037,7 @@ class PipelineSmokeTests(unittest.TestCase):
                 "deck_profile": "internal-review",
                 "style_variation_scope": "visual_aesthetic_only",
                 "content_strategy_locked": True,
+                "style_library": style_library(),
                 "taste_guidance": taste_guidance(),
                 "image_quality_policy": quality_policy(),
                 "imagegen_failure_policy": failure_policy(),
@@ -1049,10 +1062,13 @@ class PipelineSmokeTests(unittest.TestCase):
                 "candidate_directions": [
                     {
                         "option_id": "A",
+                        "style_id": "mckinsey-consulting-report",
+                        "style_source": "built-in-style-library",
                         "style_lane_id": "risk-system-map",
                         "aesthetic_family": "data-command-center",
                         "name": "经营驾驶舱",
                         "premise": "以风险系统图重写页面表达",
+                        "visual_signature": "white consulting grid with crisp evidence charts",
                         "style_variation_scope": "visual_aesthetic_only",
                         "narrative_behavior": "same_story_reexpressed",
                     }
@@ -1060,9 +1076,12 @@ class PipelineSmokeTests(unittest.TestCase):
                 "style_lanes": [
                     {
                         "option_id": "A",
+                        "style_id": "mckinsey-consulting-report",
+                        "style_source": "built-in-style-library",
                         "style_lane_id": "risk-system-map",
                         "aesthetic_family": "data-command-center",
                         "name": "经营驾驶舱",
+                        "visual_signature": "white consulting grid with crisp evidence charts",
                         "generator": "imagegen",
                         "status": "selected",
                         "prompt_path": "styles/prompts/option-A.txt",
@@ -1074,9 +1093,12 @@ class PipelineSmokeTests(unittest.TestCase):
                 "style_contact_sheets": [
                     {
                         "option_id": "A",
+                        "style_id": "mckinsey-consulting-report",
+                        "style_source": "built-in-style-library",
                         "style_lane_id": "risk-system-map",
                         "aesthetic_family": "data-command-center",
                         "name": "经营驾驶舱",
+                        "visual_signature": "white consulting grid with crisp evidence charts",
                         "style_variation_scope": "visual_aesthetic_only",
                         "generator": "imagegen",
                         "path": "styles/option-A-contact-sheet.png",
@@ -1133,6 +1155,7 @@ class PipelineSmokeTests(unittest.TestCase):
                 "deck_profile": "internal-review",
                 "style_variation_scope": "visual_aesthetic_only",
                 "content_strategy_locked": True,
+                "style_library": style_library(),
                 "taste_guidance": taste_guidance(),
                 "image_quality_policy": quality_policy(),
                 "imagegen_failure_policy": failure_policy(),
@@ -1157,19 +1180,25 @@ class PipelineSmokeTests(unittest.TestCase):
                 "candidate_directions": [
                     {
                         "option_id": "A",
+                        "style_id": "swiss-international",
+                        "style_source": "built-in-style-library",
                         "style_lane_id": "style-lane-A",
-                        "aesthetic_family": "premium-flat",
+                        "aesthetic_family": "editorial-gallery",
                         "style_variation_scope": "visual_aesthetic_only",
-                        "name": "Premium flat",
-                        "premise": "Refined flat visual skin",
+                        "name": "Swiss international",
+                        "premise": "Precise grid, limited color, exact spacing",
+                        "visual_signature": "Swiss grid, exact spacing, limited color, strong alignment",
                         "narrative_behavior": "same_story_reexpressed",
                     }
                 ],
                 "style_lanes": [
                     {
                         "option_id": "A",
+                        "style_id": "swiss-international",
+                        "style_source": "built-in-style-library",
                         "style_lane_id": "style-lane-A",
-                        "aesthetic_family": "premium-flat",
+                        "aesthetic_family": "editorial-gallery",
+                        "visual_signature": "Swiss grid, exact spacing, limited color, strong alignment",
                         "generator": "imagegen",
                         "status": "selected",
                         "prompt_path": "styles/prompts/option-A.txt",
@@ -1181,8 +1210,11 @@ class PipelineSmokeTests(unittest.TestCase):
                 "style_contact_sheets": [
                     {
                         "option_id": "A",
+                        "style_id": "swiss-international",
+                        "style_source": "built-in-style-library",
                         "style_lane_id": "style-lane-A",
-                        "aesthetic_family": "premium-flat",
+                        "aesthetic_family": "editorial-gallery",
+                        "visual_signature": "Swiss grid, exact spacing, limited color, strong alignment",
                         "style_variation_scope": "visual_aesthetic_only",
                         "generator": "imagegen",
                         "path": "styles/option-A-contact-sheet.png",

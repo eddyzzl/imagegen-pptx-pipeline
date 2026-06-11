@@ -371,7 +371,9 @@ Before generating style options, determine how many directions the user wants:
 - If the user requested full automation, default to 4 directions.
 - Recommended range: 3 to 6 directions. Fewer than 3 weakens exploration; more than 6 usually slows review.
 
-Write `style_brief.json` with `direction_count`, `generation_mode`, `narrative_lock`, `selected_narrative_id`, `visual_ambition`, `diversity_axes`, `user_style_preferences`, `candidate_directions`, `style_lanes`, and `image_quality_policy`.
+Before drafting directions, read `references/style-library.md` and map the task, user preferences, screenshots, templates, and deck profile to concrete `style_id` values. Prefer specific style ids such as `mckinsey-consulting-report`, `enterprise-annual-report`, `apple-keynote-white`, `notion-workspace-clean`, `swiss-international`, or `classical-european` over vague descriptors like "flat", "tech", "3D", "premium", or "minimal".
+
+Write `style_brief.json` with `direction_count`, `generation_mode`, `narrative_lock`, `selected_narrative_id`, `visual_ambition`, `diversity_axes`, `user_style_preferences`, `style_library`, `candidate_directions`, `style_lanes`, and `image_quality_policy`.
 
 Set `style_brief.json.style_variation_scope="visual_aesthetic_only"` and `content_strategy_locked=true` before ImageGen style exploration. The selected narrative, per-slide content, proof object, and presentation treatment are already locked; do not repackage them as style lanes.
 
@@ -401,24 +403,28 @@ If an ImageGen call fails, write or update `imagegen_retry_log.json` with the as
 
 Style direction generation must be ImageGen-based. The preferred path is **parallel style lanes**:
 
-1. Create one lane per option under `style_lanes`, each with a distinct visual `aesthetic_family`, `visual_skin`, prompt path, and expected output path. Do not use content/story/proof-object labels as lane IDs, names, or premises.
+1. Create one lane per option under `style_lanes`, each with a distinct `style_id`, `style_source`, visual `aesthetic_family`, `visual_signature`, prompt path, and expected output path. Do not use content/story/proof-object labels as lane IDs, names, or premises.
 2. When the user requested or approved subagent collaboration and subagent tools are available, spawn one `style-lane-art-director` subagent per lane. Each lane independently writes its prompt and calls ImageGen for exactly one full-deck contact sheet preview.
 3. When subagents are unavailable, not approved, or cannot call ImageGen, run the same lanes sequentially yourself, but keep separate prompts and separate ImageGen calls. Do not collapse all directions into one generic multi-option prompt unless the runtime only supports that fallback.
 4. Record each contact sheet in `style_brief.json.style_contact_sheets` with `generator="imagegen"`, `style_lane_id`, `aesthetic_family`, `prompt_path`, and `path`.
 
-Recommended aesthetic families are task-dependent. Pick the best fit from the built-in taste system and the user's preference; examples include:
+Recommended styles are task-dependent. Pick from `references/style-library.md` first, then use `custom-*` only for user-specified styles not covered by the library.
 
-- `premium-flat`: refined flat editorial/business design, high hierarchy, no default-card feel.
-- `motion-inspired`: static slides that borrow animation/keyframe rhythm, directional flow, kinetic paths, staged reveals, and motion-like composition.
-- `skeuomorphic-material`: tactile material, subtle dimensionality, physical controls, object-like evidence modules.
-- `glassmorphism-blur`: blurred glass, layered translucency, restrained depth, high contrast and readability.
-- `technical-schematic`: visual language of precise schematics, grids, drafting lines, and instrument-like annotations without changing the proof object.
-- `editorial-literary`: publication-like composition, narrative pacing, elegant typography, image/quote/essay rhythm.
-- `luxury-print`: high-end annual-report print language, crisp rules, generous but purposeful hierarchy, premium paper-like texture.
-- `animated-illustration`: polished static illustration/animation-frame language with simplified forms and vivid but restrained narrative graphics.
-- `brand-world`: strong brand atmosphere, product/company identity, visual world-building with verified assets only.
+Common mappings:
 
-Users may specify desired or forbidden aesthetic families. If they do not, the agent recommends families that fit the deck profile, audience, template, and source material. All selected families must still meet the premium taste bar; "flat", "tech", "glass", or "cartoon/animation-inspired" are not excuses for cheap, generic, or unreadable slides.
+- 麦肯锡 / consulting: `mckinsey-consulting-report`
+- 企业年报 / annual report: `enterprise-annual-report`, `luxury-print-annual`, `sustainability-esg-report`
+- 苹果发布会 / Apple keynote: `apple-keynote-black`, `apple-keynote-white`
+- Notion: `notion-workspace-clean`
+- 极简 / minimalist: `swiss-international`, `lecture-minimal-white`, `brand-proposal-minimal`
+- 古典 / classical: `classical-european`, `shareholder-letter-editorial`
+- 金融投关: `jpmorgan-financial-supplement`, `morgan-stanley-earnings`, `quarterly-10q-clean`
+- 科技/AI/模型: `technical-schematic-premium`, `ai-lab-schematic`, `linear-axis-black`, `glass-os-interface`
+- 创意品牌/作品集: `editorial-gallery-white`, `portfolio-museum-black`, `magazine-grid-modern`, `vintage-serif-collage`
+- 行业方案: `architecture-studio-minimal`, `industrial-manufacturing-blue`, `healthcare-academic-red`, `logistics-system-green`, `automotive-luxury-minimal`
+- 教育学术: `university-academic-formal`, `thesis-defense-clean`, `conference-dark-stage`
+
+Users may specify desired or forbidden `style_id` values, aesthetic families, or reference screenshots. If they do not, recommend style ids that fit the deck profile, audience, template, and source material. All selected styles must still meet the premium taste bar; named styles are not excuses for cheap, generic, or unreadable slides.
 
 Use ImageGen to create the requested number of full-deck contact-sheet style options from `deck_spec.json`, `slide_intent_plan.json`, `narrative_plan.json`, `design_system.json`, and `style_brief.json`.
 
@@ -427,7 +433,7 @@ Require:
 - all slides in correct order
 - 16:9 slide thumbnails
 - genuinely different visual systems, not recolors
-- each direction has a named visual aesthetic family, for example "premium-flat", "glassmorphism-blur", "skeuomorphic-material", "technical-schematic", "editorial-print", "animated-illustration", "spatial-3d", or "luxury-print". Do not name options by narrative/content patterns such as evidence, risk, growth, roadmap, command center, or strategy.
+- each direction has a concrete `style_id` and `style_source`, for example `mckinsey-consulting-report`, `enterprise-annual-report`, `apple-keynote-white`, `notion-workspace-clean`, `technical-schematic-premium`, `editorial-gallery-white`, `classical-european`, or `red-gold-ceremony`. Do not name options by narrative/content patterns such as evidence, risk system, roadmap, command center, or strategy.
 - direction aesthetics fit the selected `deck_profile` and template while preserving the same locked story; the deck profile informs taste and density, not a new narrative lane
 - materially different visual style grammar: one option may emphasize refined flat structure, another glass depth and translucent layers, another motion-like flow paths, another tactile material modules, another technical systems maps, another editorial narrative pacing
 - same narrative logic: every option must keep the same slide count, order, section flow, core title meaning, claims, sources, proof-object intent from `deck_spec.json`, and selected per-slide narrative treatment from `narrative_plan.json`

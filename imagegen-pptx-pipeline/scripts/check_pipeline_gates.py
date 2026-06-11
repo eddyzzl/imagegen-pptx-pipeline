@@ -20,24 +20,17 @@ CONTENT_STYLE_TERMS = (
     "risk-system",
     "system-map",
     "command-center",
-    "growth",
-    "maturity",
     "roadmap",
-    "achievement",
-    "operating",
     "dossier",
     "证据",
     "证明",
     "风控",
     "风险",
     "系统图",
-    "经营",
     "驾驶舱",
-    "成长",
-    "成熟",
     "路线",
-    "成果",
 )
+STYLE_SOURCE_VALUES = {"built-in-style-library", "user-specified", "custom-derived-from-reference"}
 REQUIRED_RETRY_PRESERVED_FIELDS = (
     "locked_slide_order",
     "slide_titles",
@@ -389,6 +382,43 @@ def has_built_in_taste_source(taste_guidance: dict) -> bool:
     return False
 
 
+def has_built_in_style_library_source(payload: dict) -> bool:
+    sources = payload.get("sources") or []
+    if not isinstance(sources, list):
+        return False
+    for source in sources:
+        if not isinstance(source, dict):
+            continue
+        if source.get("name") == "built-in-ppt-style-library" and source.get("path") == "references/style-library.md":
+            return True
+        if source.get("path") == "references/style-library.md":
+            return True
+    return False
+
+
+def check_style_source_fields(owner: str, item: dict, failures: list[str]) -> None:
+    style_id = str(item.get("style_id") or "").strip()
+    style_source = str(item.get("style_source") or "").strip()
+    if not style_id:
+        failures.append(f"{owner} missing style_id from references/style-library.md or custom-*")
+    elif not re.match(r"^(custom-)?[a-z0-9][a-z0-9-]*$", style_id):
+        failures.append(f"{owner} style_id must be kebab-case, got {style_id!r}")
+    if not style_source:
+        failures.append(f"{owner} missing style_source")
+    elif style_source not in STYLE_SOURCE_VALUES:
+        failures.append(
+            f"{owner} style_source must be one of {sorted(STYLE_SOURCE_VALUES)}; got {style_source!r}"
+        )
+    if style_source == "built-in-style-library" and style_id.startswith("custom-"):
+        failures.append(f"{owner} custom style_id cannot use built-in-style-library as style_source")
+    if style_source in {"user-specified", "custom-derived-from-reference"} and not (
+        style_id.startswith("custom-") or item.get("style_library_mapping_note")
+    ):
+        failures.append(f"{owner} custom/user style must record style_library_mapping_note")
+    if not str(item.get("visual_signature") or "").strip():
+        failures.append(f"{owner} missing visual_signature")
+
+
 def safe_int(value) -> int:
     try:
         return int(value)
@@ -656,6 +686,21 @@ def check_style_gate(
         failures.append("design_system.json taste_guidance.sources must include built-in-ppt-taste-system")
     if not has_built_in_taste_source(style_taste):
         failures.append("style_brief.json taste_guidance.sources must include built-in-ppt-taste-system")
+    style_library = style_brief.get("style_library") or {}
+    if not isinstance(style_library, dict) or not style_library:
+        failures.append("style_brief.json style_library is missing")
+    else:
+        if style_library.get("enabled") is not True:
+            failures.append("style_brief.json style_library.enabled must be true")
+        if not has_built_in_style_library_source(style_library):
+            failures.append(
+                "style_brief.json style_library.sources must include built-in-ppt-style-library "
+                "at references/style-library.md"
+            )
+        if style_library.get("style_options_must_remain_visual_only") is not True:
+            failures.append("style_brief.json style_library.style_options_must_remain_visual_only must be true")
+        if style_library.get("must_not_use_third_party_logos_without_assets") is not True:
+            failures.append("style_brief.json style_library.must_not_use_third_party_logos_without_assets must be true")
     quality_policy = check_image_quality_policy(style_brief.get("image_quality_policy"), failures, "style_brief.json")
     failure_policy = check_imagegen_failure_policy(
         style_brief.get("imagegen_failure_policy"),
@@ -751,6 +796,7 @@ def check_style_gate(
     lane_ids: set[str] = set()
     candidate_options: set[str] = set()
     for idx, candidate in enumerate(candidates, 1):
+        check_style_source_fields(f"candidate direction {idx}", candidate, failures)
         if candidate.get("option_id"):
             candidate_options.add(str(candidate.get("option_id")))
         family = candidate.get("aesthetic_family")
@@ -796,6 +842,7 @@ def check_style_gate(
         failures.append(f"style_brief.json has {len(lanes)} style_lanes but direction_count is {count}")
     lane_options: set[str] = set()
     for idx, lane in enumerate(lanes, 1):
+        check_style_source_fields(f"style lane {idx}", lane, failures)
         lane_id = lane.get("style_lane_id")
         if lane_id:
             lane_ids.add(str(lane_id))
@@ -866,6 +913,7 @@ def check_style_gate(
     sheet_options: set[str] = set()
     for raw_sheet, sheet in zip(style_brief.get("style_contact_sheets") or [], sheets):
         if isinstance(raw_sheet, dict):
+            check_style_source_fields(f"style contact sheet {sheet}", raw_sheet, failures)
             if raw_sheet.get("option_id"):
                 sheet_options.add(str(raw_sheet.get("option_id")))
             if raw_sheet.get("generator") != "imagegen":

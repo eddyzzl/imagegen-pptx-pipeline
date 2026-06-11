@@ -203,6 +203,16 @@ Lock rules:
           "preserve ImageGen comp visual grammar during PPTX reconstruction"
         ],
         "constraints_ignored": []
+      },
+      {
+        "name": "built-in-ppt-style-library",
+        "path": "references/style-library.md",
+        "used_for": "style lane selection | user style preference mapping | ImageGen style prompts",
+        "constraints_used": [
+          "choose canonical style_id values instead of vague visual adjectives",
+          "preserve locked narrative and content while changing only visual art direction"
+        ],
+        "constraints_ignored": []
       }
     ],
     "portable_rules": [
@@ -411,8 +421,24 @@ Use after narrative lock and before style contact-sheet ImageGen calls.
   },
   "user_style_preferences": {
     "requested_aesthetic_families": [],
+    "requested_style_ids": [],
     "forbidden_aesthetic_families": [],
+    "forbidden_style_ids": [],
     "notes": ""
+  },
+  "style_library": {
+    "enabled": true,
+    "sources": [
+      {
+        "name": "built-in-ppt-style-library",
+        "path": "references/style-library.md",
+        "used_for": "style lane selection | user style preference mapping | ImageGen style prompts"
+      }
+    ],
+    "default_source": "built-in-style-library",
+    "allow_custom_style_ids": true,
+    "must_not_use_third_party_logos_without_assets": true,
+    "style_options_must_remain_visual_only": true
   },
   "taste_guidance": {
     "enabled": true,
@@ -421,6 +447,11 @@ Use after narrative lock and before style contact-sheet ImageGen calls.
         "name": "built-in-ppt-taste-system",
         "path": "references/taste-system.md",
         "used_for": "direction diversity, ImageGen art direction, anti-generic review, reconstruction fidelity"
+      },
+      {
+        "name": "built-in-ppt-style-library",
+        "path": "references/style-library.md",
+        "used_for": "canonical style ids and concrete style signatures"
       }
     ],
     "style_principles": [
@@ -542,33 +573,42 @@ Use after narrative lock and before style contact-sheet ImageGen calls.
   "candidate_directions": [
     {
       "option_id": "A",
+      "style_id": "mckinsey-consulting-report",
+      "style_source": "built-in-style-library",
       "style_lane_id": "style-lane-A",
-      "aesthetic_family": "premium-flat",
+      "aesthetic_family": "consulting-report",
       "style_variation_scope": "visual_aesthetic_only",
-      "name": "Premium flat",
-      "premise": "Refined flat editorial/business visual skin with exact hierarchy, crisp rules, and restrained depth",
+      "name": "McKinsey-style consulting report",
+      "premise": "White consulting report system with strict grid, crisp issue-tree logic, waterfall/bridge charts, and sparse accent color",
+      "visual_signature": "white field, strict grid, sharp section headers, issue trees, waterfall/bridge charts, sparse accent color",
       "profile_fit": "internal-review",
-      "must_differ_by": ["flat editorial hierarchy", "minimal depth", "precise spacing", "clean chart styling"],
+      "must_differ_by": ["consulting report grid", "structured evidence charts", "sparse color", "executive report typography"],
       "narrative_behavior": "same_story_reexpressed"
     },
     {
       "option_id": "B",
+      "style_id": "enterprise-annual-report",
+      "style_source": "built-in-style-library",
       "style_lane_id": "style-lane-B",
-      "aesthetic_family": "glassmorphism-blur",
+      "aesthetic_family": "annual-report",
       "style_variation_scope": "visual_aesthetic_only",
-      "name": "Glassmorphism",
-      "premise": "Layered translucent panels, subtle blur, luminous edges, and high-contrast readable typography",
-      "must_differ_by": ["glass material", "translucent depth", "soft layered backgrounds", "clean icon glow"],
+      "name": "Enterprise annual report",
+      "premise": "Premium print annual-report language with refined typography, report rules, polished photography, and disciplined metrics",
+      "visual_signature": "premium print rules, generous margins, restrained charts, polished photography",
+      "must_differ_by": ["annual report print system", "photo/report pairing", "premium typography", "formal metric modules"],
       "narrative_behavior": "same_story_reexpressed"
     },
     {
       "option_id": "C",
+      "style_id": "apple-keynote-white",
+      "style_source": "built-in-style-library",
       "style_lane_id": "style-lane-C",
-      "aesthetic_family": "skeuomorphic-material",
+      "aesthetic_family": "keynote-launch",
       "style_variation_scope": "visual_aesthetic_only",
-      "name": "Skeuomorphic material",
-      "premise": "Tactile material modules, physical controls, soft shadows, paper/metal depth, and object-like surfaces",
-      "must_differ_by": ["tactile material", "physical controls", "soft shadow depth", "object-like modules"],
+      "name": "Apple keynote white clarity",
+      "premise": "Keynote-style white clarity with oversized focal object, minimal copy, soft shadow, and decisive hierarchy",
+      "visual_signature": "white field, huge type, hero object, soft shadow, few decisive points",
+      "must_differ_by": ["keynote scale", "large focal object", "dramatic whitespace", "minimal copy hierarchy"],
       "narrative_behavior": "same_story_reexpressed"
     }
   ],
@@ -576,7 +616,11 @@ Use after narrative lock and before style contact-sheet ImageGen calls.
     {
       "style_lane_id": "style-lane-A",
       "option_id": "A",
-      "aesthetic_family": "premium-flat",
+      "style_id": "mckinsey-consulting-report",
+      "style_source": "built-in-style-library",
+      "aesthetic_family": "consulting-report",
+      "name": "McKinsey-style consulting report",
+      "visual_signature": "white field, strict grid, sharp section headers, issue trees, waterfall/bridge charts, sparse accent color",
       "style_variation_scope": "visual_aesthetic_only",
       "subagent_role": "style-lane-art-director",
       "generator": "imagegen",
@@ -610,7 +654,11 @@ Use after narrative lock and before style contact-sheet ImageGen calls.
     {
       "option_id": "A",
       "style_lane_id": "style-lane-A",
-      "aesthetic_family": "premium-flat",
+      "style_id": "mckinsey-consulting-report",
+      "style_source": "built-in-style-library",
+      "aesthetic_family": "consulting-report",
+      "name": "McKinsey-style consulting report",
+      "visual_signature": "white field, strict grid, sharp section headers, issue trees, waterfall/bridge charts, sparse accent color",
       "style_variation_scope": "visual_aesthetic_only",
       "generator": "imagegen",
       "path": "styles/option-A-contact-sheet.png",
@@ -642,8 +690,11 @@ Rules:
 - After single-slide comps exist for multiple selected styles, ask which style set(s) to convert to PPTX and record that answer in `pptx_conversion_selection.selected_style_lane_ids`.
 - `style_contact_sheets[].generator` must be `imagegen`; rendered PPTX previews, template screenshots, or hand-made placeholders are invalid style previews.
 - `style_variation_scope` must be `visual_aesthetic_only`, and `content_strategy_locked` must be true before ImageGen style exploration.
+- `style_library.enabled` must be true, and sources must include `references/style-library.md`.
+- Every `candidate_directions[]`, `style_lanes[]`, and `style_contact_sheets[]` entry must record `style_id`, `style_source`, and `visual_signature`.
+- Built-in style examples include `mckinsey-consulting-report`, `enterprise-annual-report`, `apple-keynote-white`, `apple-keynote-black`, `notion-workspace-clean`, `swiss-international`, `classical-european`, `jpmorgan-financial-supplement`, `technical-schematic-premium`, `editorial-gallery-white`, and the other ids in `references/style-library.md`.
 - Each candidate direction must have a distinct visual `aesthetic_family`, material/depth treatment, typography/icon/chart language, density, and visual rhythm. Recolored variants fail the style gate.
-- Candidate direction names, lane IDs, aesthetic families, and premises must not use content/narrative/proof-object terms such as evidence chain, risk system map, growth maturity, roadmap, achievement, command center, or their Chinese equivalents.
+- Candidate direction names, lane IDs, aesthetic families, and premises must not use content/narrative/proof-object terms such as evidence chain, risk system map, roadmap, command center, or their Chinese equivalents.
 - Candidate directions must fit the selected `deck_profile`; do not reuse defense-deck direction names for product, company, model, or sales decks unless they genuinely fit.
 - Candidate directions must preserve `narrative_lock`; style differences may change visual expression but not slide order, title meaning, claims, required data, sources, or proof-object intent.
 - `narrative_lock.deck_spec_fingerprint` must match the current locked deck spec. If content changes, regenerate style lanes.

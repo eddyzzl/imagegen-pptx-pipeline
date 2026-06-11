@@ -21,7 +21,7 @@ It can also run in `reconstruction-only` mode when you already have final per-sl
 3. Produce `slide_intent_matrix.md` so the user can confirm every slide's title, core idea, proof goal, and evidence strategy.
 4. Produce `narrative_matrix.md` so the user can select how each page should present the confirmed content.
 5. Ask for or infer the requested number of visual style directions.
-6. Generate materially different ImageGen contact-sheet directions.
+6. Select concrete visual style ids from the built-in style library, then generate materially different ImageGen contact-sheet directions.
 7. Let the user choose one or multiple style directions unless full automation was explicitly requested.
 8. Generate one independent ImageGen comp for every slide in each selected style. Parallelism is allowed across style lanes; each style lane still generates its pages serially to keep chrome consistent.
 9. Save raw ImageGen returns, normalize every approved comp to uniform 4K (`3840x2160`) locally, then review and iterate slide comps before PPTX work.
@@ -134,6 +134,7 @@ tools/sync-to-codex.sh --codex-home /path/to/.codex
 - Final text and numbers come from `deck_spec.json`.
 - User-supplied templates are hard constraints.
 - Style options must differ by visual system, not just color.
+- Style options should use canonical `style_id` values from `imagegen-pptx-pipeline/references/style-library.md`, such as `mckinsey-consulting-report`, `enterprise-annual-report`, `apple-keynote-white`, `notion-workspace-clean`, `swiss-international`, and `classical-european`, instead of vague labels like flat/3D/tech.
 - ImageGen prompts request the highest available clarity/detail by default. Raw single-slide comps request true 4K 16:9 (`3840x2160`) first with bounded 2K/1080p fallback; every accepted downstream comp is then normalized locally to uniform 4K before PPTX reconstruction.
 - Blurry titles, unreadable key numbers, muddy icons, soft fine lines, low-resolution comps, or compression artifacts are P1 blockers unless the user explicitly accepts the risk.
 - Local 4K normalization improves uniform dimensions and edge clarity, but it does not recover unreadable source text or missing icon detail. Visual-clarity review still decides whether to regenerate.

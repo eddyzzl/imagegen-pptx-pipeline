@@ -24,6 +24,18 @@ BUILT_IN_TASTE_SOURCE = {
     "constraints_ignored": [],
 }
 
+BUILT_IN_STYLE_LIBRARY_SOURCE = {
+    "name": "built-in-ppt-style-library",
+    "path": "references/style-library.md",
+    "used_for": "style lane selection | user style preference mapping | ImageGen style prompts",
+    "constraints_used": [
+        "choose canonical style_id values instead of vague visual adjectives",
+        "map user references such as McKinsey, annual report, Apple keynote, Notion, minimalist, and classical to concrete style ids",
+        "preserve locked narrative and content while changing only visual art direction",
+    ],
+    "constraints_ignored": [],
+}
+
 BUILT_IN_TASTE_RULES = [
     "Avoid generic equal-card grids unless the content requires a matrix",
     "Use intentional whitespace and hierarchy, not decoration",
@@ -357,11 +369,12 @@ def main() -> int:
         },
         "taste_guidance": {
             "enabled": True,
-            "sources": [BUILT_IN_TASTE_SOURCE],
+            "sources": [BUILT_IN_TASTE_SOURCE, BUILT_IN_STYLE_LIBRARY_SOURCE],
             "portable_rules": BUILT_IN_TASTE_RULES,
             "ppt_translation_notes": [
                 "The built-in taste system is static PPT guidance, not a web interaction system",
                 "Frontend-only hover/GSAP/responsive rules from optional external sources are not PPT constraints",
+                "The built-in style library provides visual direction ids, not permission to use third-party logos or imply affiliation",
             ],
         },
         "reference_patterns": [],
@@ -450,8 +463,33 @@ def main() -> int:
         },
         "user_style_preferences": {
             "requested_aesthetic_families": [],
+            "requested_style_ids": [],
             "forbidden_aesthetic_families": [],
+            "forbidden_style_ids": [],
             "notes": "",
+        },
+        "style_library": {
+            "enabled": True,
+            "sources": [BUILT_IN_STYLE_LIBRARY_SOURCE],
+            "selection_rule": (
+                "Recommend concrete style_id values from references/style-library.md. "
+                "Use custom-* only for user-specified styles not covered by the library."
+            ),
+            "default_source": "built-in-style-library",
+            "allow_custom_style_ids": True,
+            "must_not_use_third_party_logos_without_assets": True,
+            "style_options_must_remain_visual_only": True,
+            "reference_screenshot_categories": [
+                "workplace",
+                "company-business",
+                "consulting-research",
+                "finance-investor",
+                "industry-solutions",
+                "education-academic",
+                "creative-brand",
+                "personal",
+                "lifestyle",
+            ],
         },
         "taste_guidance": {
             "enabled": True,
@@ -460,6 +498,11 @@ def main() -> int:
                     "name": BUILT_IN_TASTE_SOURCE["name"],
                     "path": BUILT_IN_TASTE_SOURCE["path"],
                     "used_for": "direction diversity, ImageGen art direction, anti-generic review, reconstruction fidelity",
+                },
+                {
+                    "name": BUILT_IN_STYLE_LIBRARY_SOURCE["name"],
+                    "path": BUILT_IN_STYLE_LIBRARY_SOURCE["path"],
+                    "used_for": "canonical style ids and concrete style signatures",
                 }
             ],
             "style_principles": [

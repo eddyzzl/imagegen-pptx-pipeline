@@ -85,9 +85,23 @@ Use evidence spine, contribution map, capability comparison, growth arc, lessons
 
 ## Style Direction Diversity
 
-When generating multiple directions, each option must differ by more than color:
+When generating multiple directions, choose concrete `style_id` values from [style-library.md](style-library.md) before writing ImageGen prompts. Do not start from vague adjectives like "flat", "3D", "tech", "premium", or "minimal" unless they map to a canonical style id.
+
+Common user requests map to style ids:
+
+- McKinsey style: `mckinsey-consulting-report`
+- Enterprise annual report style: `enterprise-annual-report` or `luxury-print-annual`
+- Apple launch/keynote style: `apple-keynote-black` or `apple-keynote-white`
+- Notion style: `notion-workspace-clean`
+- Minimalist style: `swiss-international`, `lecture-minimal-white`, or `brand-proposal-minimal`
+- Classical style: `classical-european` or `shareholder-letter-editorial`
+
+Screenshot-inspired categories from Tosea-like template libraries are represented in `style-library.md`: workplace, company business, consulting research, finance/investor, industry solution, education/academic, creative brand, personal/resume, and lifestyle/event.
+
+Each option must differ by more than color:
 
 - aesthetic family
+- canonical style id and style source
 - composition grammar
 - visual skin and material language
 - density and pacing
@@ -98,18 +112,20 @@ When generating multiple directions, each option must differ by more than color:
 
 Examples of genuinely different visual options:
 
-- Premium-flat: restrained flat editorial/business visual skin, exact spacing, crisp rules, and no default-card feel.
-- Glassmorphism-blur: translucent layered panels, frosted depth, fine highlights, and high-contrast readable text.
-- Skeuomorphic-material: tactile paper/metal/glass surfaces, object-like panels, and subtle dimensionality.
-- Technical-schematic: schematic drafting language, measured connectors, grids, and instrument-like annotations.
-- Animated-illustration: polished static illustration/animation-frame language with simplified but business-readable forms.
-- Luxury-print: high-end annual-report print language, premium paper texture, refined typography, and deliberate hierarchy.
+- `mckinsey-consulting-report`: white consulting grid, issue-tree logic, bridge/waterfall charts, sparse accent color.
+- `enterprise-annual-report`: premium print rules, disciplined metrics, refined typography, polished photography.
+- `apple-keynote-white`: large hero object, dramatic whitespace, oversized typography, decisive minimal copy.
+- `notion-workspace-clean`: block rhythm, simple icons, light dividers, workspace/database clarity.
+- `technical-schematic-premium`: precise grids, connectors, line icons, system diagrams, instrument annotations.
+- `editorial-gallery-white`: gallery numerals, image/object panels, serif/sans contrast, publication whitespace.
 
 Near-identical options are a P1 failure even if they look polished.
 
 ## Aesthetic Family Taxonomy
 
 `aesthetic_family` is not a decoration label. It must drive visual-only choices: composition grammar, material/depth, typography, density, icon/illustration language, chart rendering, and known failure modes while preserving the same deck story, slide content, and proof object.
+
+Prefer the concrete `style_id` catalog in `style-library.md`. The older aesthetic families below remain broad fallback families or secondary influences, not the preferred user-facing option names.
 
 ### premium-flat
 
