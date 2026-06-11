@@ -18,6 +18,7 @@ GATE_SCRIPT = SKILL_DIR / "scripts" / "check_pipeline_gates.py"
 COMP_ASSET_SCRIPT = SKILL_DIR / "scripts" / "check_imagegen_comp_asset.py"
 NORMALIZE_SCRIPT = SKILL_DIR / "scripts" / "normalize_slide_comp.py"
 ICON_SCRIPT = SKILL_DIR / "scripts" / "prepare_icon_assets.py"
+AUDIT_SCRIPT = SKILL_DIR / "scripts" / "audit_pptx_reconstruction.py"
 
 
 def load_gate_module():
@@ -159,6 +160,57 @@ def visual_contract_generation_defaults() -> dict:
             "rounds_log_path": "qa/render-fix/render_fix_rounds.json",
             "block_on_unresolved_p0_p1": True,
         },
+        "pptx_native_reconstruction_policy": native_reconstruction_policy(),
+        "default_reconstruction_mode": "native_trace_hybrid",
+        "native_trace_hybrid_required": True,
+        "pixel_locked_hybrid_required": False,
+    }
+
+
+def native_reconstruction_policy() -> dict:
+    return {
+        "enabled": True,
+        "audit_script": "scripts/audit_pptx_reconstruction.py",
+        "report_path": "qa/pptx-reconstruction-audit.json",
+        "require_native_trace_hybrid_by_default": True,
+        "source_image_is_coordinate_blueprint": True,
+        "source_image_may_not_be_retained_as_full_slide_layer": True,
+        "allow_full_slide_backplate_by_default": False,
+        "max_full_slide_or_large_raster_images_per_slide": 0,
+        "full_slide_or_large_picture_area_ratio": 0.85,
+        "content_slide_thresholds": {
+            "minimum_native_elements": 35,
+            "minimum_visible_text_shapes": 8,
+            "minimum_editable_text_chars": 60,
+        },
+        "simple_slide_thresholds": {
+            "minimum_native_elements": 10,
+            "minimum_visible_text_shapes": 2,
+            "minimum_editable_text_chars": 10,
+        },
+    }
+
+
+def native_trace_plan(*, simple: bool = True) -> dict:
+    return {
+        "source_image_used_as_coordinate_reference": True,
+        "source_image_used_as_coordinate_blueprint": True,
+        "source_image_not_retained_as_full_slide_layer": True,
+        "pixel_to_inch_mapping_recorded": True,
+        "native_element_count": 16 if simple else 80,
+        "visible_text_box_count": 4 if simple else 14,
+        "editable_text_char_count": 40 if simple else 180,
+        "render_fix_verify_loop": True,
+        "retained_image_exceptions": [],
+    }
+
+
+def native_overlay_plan(*, count: int = 4) -> dict:
+    return {
+        "visible_native_text_overlay": True,
+        "visible_overlay_count": count,
+        "native_shape_count": 40,
+        "regions": ["editable title", "editable body", "editable key number", "editable footer"],
     }
 
 
@@ -437,6 +489,81 @@ class PipelineSmokeTests(unittest.TestCase):
             self.assertTrue(payload["results"][0]["transparent_background"])
             self.assertTrue(payload["results"][0]["edge_clear"])
 
+    def test_pptx_reconstruction_audit_rejects_full_slide_image_only(self) -> None:
+        from PIL import Image
+        from pptx import Presentation
+        from pptx.util import Inches
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            image = tmp_path / "source.png"
+            Image.new("RGB", (1920, 1080), (240, 240, 240)).save(image)
+            pptx_path = tmp_path / "image-only.pptx"
+            prs = Presentation()
+            prs.slide_width = Inches(13.333333)
+            prs.slide_height = Inches(7.5)
+            slide = prs.slides.add_slide(prs.slide_layouts[6])
+            slide.shapes.add_picture(str(image), 0, 0, width=prs.slide_width, height=prs.slide_height)
+            prs.save(pptx_path)
+
+            completed = subprocess.run(
+                [sys.executable, str(AUDIT_SCRIPT), "--pptx", str(pptx_path)],
+                check=False,
+                text=True,
+                capture_output=True,
+            )
+            self.assertEqual(completed.returncode, 1)
+            payload = json.loads(completed.stdout)
+            self.assertEqual(payload["status"], "FAIL")
+            self.assertTrue(any("large/full-slide raster" in item for item in payload["failures"]))
+
+    def test_pptx_reconstruction_audit_accepts_native_dense_slide(self) -> None:
+        from pptx import Presentation
+        from pptx.enum.shapes import MSO_SHAPE
+        from pptx.util import Inches, Pt
+
+        with tempfile.TemporaryDirectory() as tmp:
+            pptx_path = Path(tmp) / "native-dense.pptx"
+            prs = Presentation()
+            prs.slide_width = Inches(13.333333)
+            prs.slide_height = Inches(7.5)
+            slide = prs.slides.add_slide(prs.slide_layouts[6])
+
+            for row in range(5):
+                for col in range(7):
+                    shape = slide.shapes.add_shape(
+                        MSO_SHAPE.ROUNDED_RECTANGLE,
+                        Inches(0.4 + col * 1.75),
+                        Inches(1.2 + row * 0.75),
+                        Inches(1.45),
+                        Inches(0.42),
+                    )
+                    shape.text = f"Native card {row}-{col}"
+
+            for idx in range(10):
+                box = slide.shapes.add_textbox(
+                    Inches(0.5 + (idx % 5) * 2.4),
+                    Inches(0.2 + (idx // 5) * 0.45),
+                    Inches(2.1),
+                    Inches(0.3),
+                )
+                run = box.text_frame.paragraphs[0].add_run()
+                run.text = f"Editable text block {idx}"
+                run.font.size = Pt(12)
+            prs.save(pptx_path)
+
+            completed = subprocess.run(
+                [sys.executable, str(AUDIT_SCRIPT), "--pptx", str(pptx_path)],
+                check=False,
+                text=True,
+                capture_output=True,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+            payload = json.loads(completed.stdout)
+            self.assertEqual(payload["status"], "PASS")
+            self.assertGreaterEqual(payload["summary"]["total_native_elements"], 35)
+            self.assertGreaterEqual(payload["summary"]["total_editable_text_shapes"], 8)
+
     def test_init_workspace_creates_slide_intent_artifacts(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             result = run_json(
@@ -621,7 +748,7 @@ class PipelineSmokeTests(unittest.TestCase):
             payload = json.loads(completed.stdout)
             self.assertEqual(payload["status"], "PASS")
 
-    def test_visual_contract_requires_pixel_locked_hybrid_plan(self) -> None:
+    def test_visual_contract_requires_native_trace_plan(self) -> None:
         gate_module = load_gate_module()
         with tempfile.TemporaryDirectory() as tmp:
             workspace = Path(tmp)
@@ -642,8 +769,6 @@ class PipelineSmokeTests(unittest.TestCase):
                 "selected_style": "Option A",
                 "contact_sheet": "styles/option-a-contact-sheet.png",
                 "per_slide_comps_complete": True,
-                "default_reconstruction_mode": "pixel_locked_hybrid",
-                "pixel_locked_hybrid_required": True,
                 "image_quality_policy": quality_policy(),
                 "slides": [
                     {
@@ -652,14 +777,13 @@ class PipelineSmokeTests(unittest.TestCase):
                         "normalization": normalization_record(1),
                         "image_source_type": "imagegen",
                         "visual_archetype": "system map",
-                        "reconstruction_mode": "pixel_locked_hybrid",
+                        "reconstruction_mode": "native_trace_hybrid",
                     }
                 ],
             }
             failures: list[str] = []
             gate_module.check_visual_contract(workspace, deck_spec, visual_contract, failures)
-            self.assertTrue(any("comp_backplate.strategy" in item for item in failures))
-            self.assertTrue(any("text_mask_plan" in item for item in failures))
+            self.assertTrue(any("native_trace_plan" in item for item in failures))
             self.assertTrue(any("editable_overlay_plan" in item for item in failures))
             self.assertTrue(any("clarity_review" in item for item in failures))
 
@@ -667,20 +791,17 @@ class PipelineSmokeTests(unittest.TestCase):
                 {
                     "clarity_review": clarity_review(),
                     "style_continuity_review": style_continuity_review(),
+                    "native_trace_plan": native_trace_plan(),
                     "comp_backplate": {
-                        "strategy": "full_slide",
-                        "path": "slides/slide-001-comp.png",
-                        "insert_first": True,
-                        "covers_full_slide": True,
+                        "strategy": "none",
+                        "path": "",
+                        "insert_first": False,
+                        "covers_full_slide": False,
                     },
                     "text_mask_plan": [
-                        {"region": "title", "method": "shape mask", "reason": "editable title overlay"}
+                        {"region": "not applicable", "method": "source image not retained", "reason": "native trace"}
                     ],
-                    "editable_overlay_plan": {
-                        "visible_native_text_overlay": True,
-                        "visible_overlay_count": 2,
-                        "regions": ["editable title", "editable key number"],
-                    },
+                    "editable_overlay_plan": native_overlay_plan(),
                 }
             )
             failures = []
@@ -716,8 +837,6 @@ class PipelineSmokeTests(unittest.TestCase):
                 "selected_style": "Option A",
                 "contact_sheet": "styles/option-a-contact-sheet.png",
                 "per_slide_comps_complete": True,
-                "default_reconstruction_mode": "pixel_locked_hybrid",
-                "pixel_locked_hybrid_required": True,
                 "image_quality_policy": quality_policy(),
                 "slides": [
                     {
@@ -726,14 +845,11 @@ class PipelineSmokeTests(unittest.TestCase):
                         "normalization": normalization_record(1),
                         "image_source_type": "imagegen",
                         "visual_archetype": "system map",
-                        "reconstruction_mode": "pixel_locked_hybrid",
+                        "reconstruction_mode": "native_trace_hybrid",
+                        "native_trace_plan": native_trace_plan(),
                         "clarity_review": bad_clarity,
                         "style_continuity_review": style_continuity_review(),
-                        "comp_backplate": {
-                            "strategy": "full_slide",
-                            "path": "slides/slide-001-comp.png",
-                            "insert_first": True,
-                        },
+                        "comp_backplate": {"strategy": "none", "path": "", "insert_first": False, "covers_full_slide": False},
                         "text_mask_plan": [
                             {"region": "title", "method": "shape mask", "reason": "editable title overlay"}
                         ],
@@ -770,8 +886,6 @@ class PipelineSmokeTests(unittest.TestCase):
                 "selected_style": "Option A",
                 "contact_sheet": "styles/option-a-contact-sheet.png",
                 "per_slide_comps_complete": True,
-                "default_reconstruction_mode": "pixel_locked_hybrid",
-                "pixel_locked_hybrid_required": True,
                 "image_quality_policy": quality_policy(),
                 "slides": [
                     {
@@ -780,14 +894,11 @@ class PipelineSmokeTests(unittest.TestCase):
                         "normalization": normalization_record(1),
                         "image_source_type": "imagegen",
                         "visual_archetype": "system map",
-                        "reconstruction_mode": "pixel_locked_hybrid",
+                        "reconstruction_mode": "native_trace_hybrid",
+                        "native_trace_plan": native_trace_plan(),
                         "clarity_review": clarity_review(),
                         "style_continuity_review": style_continuity_review(),
-                        "comp_backplate": {
-                            "strategy": "full_slide",
-                            "path": "slides/slide-001-comp.png",
-                            "insert_first": True,
-                        },
+                        "comp_backplate": {"strategy": "none", "path": "", "insert_first": False, "covers_full_slide": False},
                         "text_mask_plan": [
                             {"region": "title", "method": "shape mask", "reason": "editable title overlay"}
                         ],
@@ -824,8 +935,6 @@ class PipelineSmokeTests(unittest.TestCase):
                 "selected_style": "Option A",
                 "contact_sheet": "styles/option-a-contact-sheet.png",
                 "per_slide_comps_complete": True,
-                "default_reconstruction_mode": "pixel_locked_hybrid",
-                "pixel_locked_hybrid_required": True,
                 "image_quality_policy": quality_policy(),
                 "slides": [],
             }
@@ -840,13 +949,15 @@ class PipelineSmokeTests(unittest.TestCase):
                         "normalization": normalization_record(idx),
                         "image_source_type": "imagegen",
                         "visual_archetype": "system map",
-                        "reconstruction_mode": "pixel_locked_hybrid",
+                        "reconstruction_mode": "native_trace_hybrid",
+                        "native_trace_plan": native_trace_plan(),
                         "clarity_review": review,
                         "style_continuity_review": style_continuity_review(),
                         "comp_backplate": {
-                            "strategy": "full_slide",
-                            "path": f"slides/slide-{idx:03d}-comp.png",
-                            "insert_first": True,
+                            "strategy": "none",
+                            "path": "",
+                            "insert_first": False,
+                            "covers_full_slide": False,
                         },
                         "text_mask_plan": [
                             {"region": "title", "method": "shape mask", "reason": "editable title overlay"}
@@ -888,8 +999,6 @@ class PipelineSmokeTests(unittest.TestCase):
                     **visual_contract_generation_defaults()["comp_style_lock"],
                     "generation_owner": "page_subagents",
                 },
-                "default_reconstruction_mode": "pixel_locked_hybrid",
-                "pixel_locked_hybrid_required": True,
                 "image_quality_policy": quality_policy(),
                 "slides": [
                     {
@@ -898,14 +1007,11 @@ class PipelineSmokeTests(unittest.TestCase):
                         "normalization": normalization_record(1),
                         "image_source_type": "imagegen",
                         "visual_archetype": "system map",
-                        "reconstruction_mode": "pixel_locked_hybrid",
+                        "reconstruction_mode": "native_trace_hybrid",
+                        "native_trace_plan": native_trace_plan(),
                         "clarity_review": clarity_review(),
                         "style_continuity_review": style_continuity_review(),
-                        "comp_backplate": {
-                            "strategy": "full_slide",
-                            "path": "slides/slide-001-comp.png",
-                            "insert_first": True,
-                        },
+                        "comp_backplate": {"strategy": "none", "path": "", "insert_first": False, "covers_full_slide": False},
                         "text_mask_plan": [
                             {"region": "title", "method": "shape mask", "reason": "editable title overlay"}
                         ],
@@ -966,8 +1072,6 @@ class PipelineSmokeTests(unittest.TestCase):
                         "normalized_4k_complete": True,
                     }
                 ],
-                "default_reconstruction_mode": "pixel_locked_hybrid",
-                "pixel_locked_hybrid_required": True,
                 "image_quality_policy": quality_policy(),
                 "slides": [
                     {
@@ -976,14 +1080,11 @@ class PipelineSmokeTests(unittest.TestCase):
                         "normalization": normalization,
                         "image_source_type": "imagegen",
                         "visual_archetype": "system map",
-                        "reconstruction_mode": "pixel_locked_hybrid",
+                        "reconstruction_mode": "native_trace_hybrid",
+                        "native_trace_plan": native_trace_plan(),
                         "clarity_review": clarity_review(),
                         "style_continuity_review": style_continuity_review(),
-                        "comp_backplate": {
-                            "strategy": "full_slide",
-                            "path": "slides/style-lane-A/slide-001-comp.png",
-                            "insert_first": True,
-                        },
+                        "comp_backplate": {"strategy": "none", "path": "", "insert_first": False, "covers_full_slide": False},
                         "text_mask_plan": [
                             {"region": "title", "method": "shape mask", "reason": "editable title overlay"}
                         ],
@@ -1325,11 +1426,12 @@ class PipelineSmokeTests(unittest.TestCase):
                             "source_image_path": "slides/slide-001-comp.png",
                             "text_source_status": "provided",
                             "text_source_path": "",
-                            "reconstruction_mode": "pixel_locked_hybrid",
+                            "reconstruction_mode": "native_trace_hybrid",
+                            "native_trace_plan": native_trace_plan(),
                             "required_editable_overlays": ["title"],
                             "editable_overlay_coverage": {
                                 "visible_native_text_overlay": True,
-                                "visible_overlay_count": 1,
+                                "visible_overlay_count": 4,
                             },
                             "output_slide_pptx": "slide-modules/slide-001.pptx",
                             "preview_path": "preview/slide-001-pptx.png",
@@ -1354,22 +1456,19 @@ class PipelineSmokeTests(unittest.TestCase):
                             "slide_id": "slide-001",
                             "comp_path": "slides/slide-001-comp.png",
                             "visual_archetype": "source image",
-                            "reconstruction_mode": "pixel_locked_hybrid",
+                            "reconstruction_mode": "native_trace_hybrid",
+                            "native_trace_plan": native_trace_plan(),
                             "clarity_review": clarity_review(),
                             "comp_backplate": {
-                                "strategy": "full_slide",
-                                "path": "slides/slide-001-comp.png",
-                                "insert_first": True,
-                                "covers_full_slide": True,
+                                "strategy": "none",
+                                "path": "",
+                                "insert_first": False,
+                                "covers_full_slide": False,
                             },
                             "text_mask_plan": [
-                                {"region": "title", "method": "shape mask", "reason": "editable overlay"}
+                                {"region": "not applicable", "method": "source image not retained", "reason": "native trace"}
                             ],
-                            "editable_overlay_plan": {
-                                "visible_native_text_overlay": True,
-                                "visible_overlay_count": 1,
-                                "regions": ["editable title"],
-                            },
+                            "editable_overlay_plan": native_overlay_plan(),
                         }
                     ],
                 }

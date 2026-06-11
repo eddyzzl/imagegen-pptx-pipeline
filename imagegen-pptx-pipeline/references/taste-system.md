@@ -195,9 +195,9 @@ If a template exists, the prompt must explicitly include the mapped source slide
 
 ## PPTX Reconstruction Rules
 
-The comp is a construction drawing. Rebuild main titles, body text, numbers, footers, and page markers as editable PPT text. Rebuild simple geometry natively. Retain cropped image layers when needed for complex backgrounds, texture, depth, illustrations, or diagram backplates.
+The comp is a construction drawing and coordinate blueprint. Rebuild main titles, body text, numbers, footers, page markers, cards, connectors, simple diagrams, and simple geometry as editable/native PPT elements. Retain cropped image layers only when needed for complex backgrounds, texture, depth, illustrations, or hard-to-trace diagram fragments.
 
-Do not deliver a final slide as only one flat image with no editable main information unless the user explicitly accepts non-editable output. A whole-slide comp backplate is acceptable when editable text/numbers/simple shapes are overlaid.
+Do not deliver a final slide as only one flat image with no editable main information unless the user explicitly accepts non-editable output. A whole-slide comp backplate is a downgrade exception, not the default, and requires recorded user acceptance.
 
 Do not replace a rich ImageGen comp with a generic table, card grid, or default layout because it is easier to author. If native reconstruction would lose the premium feel, retain the complex visual layer from the comp and overlay editable text/shapes.
 

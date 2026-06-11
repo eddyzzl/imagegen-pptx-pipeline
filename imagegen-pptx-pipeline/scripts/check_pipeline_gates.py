@@ -1000,6 +1000,16 @@ def check_reconstruction_manifest(
         if page_sharding.get(key) is not True:
             failures.append(f"reconstruction_manifest.json page_sharding.{key} must be true")
     global_rules = reconstruction_manifest.get("global_rules", {})
+    if global_rules.get("visual_fidelity_priority") != "native_trace_hybrid":
+        failures.append("reconstruction_manifest.json global_rules.visual_fidelity_priority must be native_trace_hybrid")
+    if global_rules.get("source_image_is_coordinate_blueprint_not_final_layer") is not True:
+        failures.append("reconstruction_manifest.json must treat source images as coordinate blueprints, not final layers")
+    if global_rules.get("native_trace_hybrid_default") is not True:
+        failures.append("reconstruction_manifest.json global_rules.native_trace_hybrid_default must be true")
+    if global_rules.get("full_slide_image_backplate_forbidden_by_default") is not True:
+        failures.append("reconstruction_manifest.json must forbid full-slide image backplates by default")
+    if global_rules.get("native_density_audit_required") is not True:
+        failures.append("reconstruction_manifest.json global_rules.native_density_audit_required must be true")
     if global_rules.get("ordinary_table_or_card_rebuild_forbidden") is not True:
         failures.append("reconstruction_manifest.json must forbid ordinary table/card rebuilds")
     if global_rules.get("native_text_boxes_allowed_only_as_transparent_overlays") is not True:
@@ -1034,6 +1044,26 @@ def check_reconstruction_manifest(
         if slide.get("reconstruction_mode") not in {"pixel_locked_hybrid", "sliced_hybrid", "native_trace_hybrid"}:
             failures.append(
                 f"reconstruction slide {idx:03d} reconstruction_mode must be pixel_locked_hybrid, sliced_hybrid, or native_trace_hybrid"
+            )
+        native_trace_exception = slide.get("native_trace_exception") if isinstance(slide.get("native_trace_exception"), dict) else {}
+        if (
+            slide.get("reconstruction_mode") != "native_trace_hybrid"
+            and native_trace_exception.get("user_accepted_risk") is not True
+        ):
+            failures.append(
+                f"reconstruction slide {idx:03d} reconstruction_mode must be native_trace_hybrid unless native_trace_exception.user_accepted_risk is true"
+            )
+        trace_plan = slide.get("native_trace_plan") or {}
+        if not isinstance(trace_plan, dict):
+            failures.append(f"reconstruction slide {idx:03d} native_trace_plan must be an object")
+            trace_plan = {}
+        if trace_plan.get("source_image_used_as_coordinate_blueprint") is not True:
+            failures.append(
+                f"reconstruction slide {idx:03d} native_trace_plan.source_image_used_as_coordinate_blueprint must be true"
+            )
+        if trace_plan.get("source_image_not_retained_as_full_slide_layer") is not True:
+            failures.append(
+                f"reconstruction slide {idx:03d} native_trace_plan.source_image_not_retained_as_full_slide_layer must be true"
             )
         if not slide.get("required_editable_overlays"):
             failures.append(f"reconstruction slide {idx:03d} missing required_editable_overlays")
@@ -1113,6 +1143,78 @@ def check_render_fix_loop_policy(visual_contract: dict, failures: list[str]) -> 
     return loop
 
 
+def native_policy_threshold(policy: dict, slide_index: int, slide_count: int) -> dict:
+    thresholds = policy.get("content_slide_thresholds") or {}
+    if slide_index == 1 or slide_index == slide_count:
+        thresholds = policy.get("simple_slide_thresholds") or thresholds
+    return {
+        "minimum_native_elements": safe_int(thresholds.get("minimum_native_elements")) or 35,
+        "minimum_visible_text_shapes": safe_int(thresholds.get("minimum_visible_text_shapes")) or 8,
+        "minimum_editable_text_chars": safe_int(thresholds.get("minimum_editable_text_chars")) or 60,
+    }
+
+
+def check_native_reconstruction_policy(visual_contract: dict, failures: list[str]) -> dict:
+    policy = visual_contract.get("pptx_native_reconstruction_policy") or {}
+    if not isinstance(policy, dict) or not policy:
+        failures.append("visual_contract.json pptx_native_reconstruction_policy is missing")
+        return {}
+    if policy.get("enabled") is not True:
+        failures.append("visual_contract.json pptx_native_reconstruction_policy.enabled must be true")
+    if policy.get("audit_script") != "scripts/audit_pptx_reconstruction.py":
+        failures.append(
+            "visual_contract.json pptx_native_reconstruction_policy.audit_script must be "
+            "scripts/audit_pptx_reconstruction.py"
+        )
+    if not policy.get("report_path"):
+        failures.append("visual_contract.json pptx_native_reconstruction_policy.report_path is missing")
+    if policy.get("require_native_trace_hybrid_by_default") is not True:
+        failures.append(
+            "visual_contract.json pptx_native_reconstruction_policy.require_native_trace_hybrid_by_default must be true"
+        )
+    if policy.get("source_image_is_coordinate_blueprint") is not True:
+        failures.append(
+            "visual_contract.json pptx_native_reconstruction_policy.source_image_is_coordinate_blueprint must be true"
+        )
+    if policy.get("source_image_may_not_be_retained_as_full_slide_layer") is not True:
+        failures.append(
+            "visual_contract.json pptx_native_reconstruction_policy.source_image_may_not_be_retained_as_full_slide_layer must be true"
+        )
+    if policy.get("allow_full_slide_backplate_by_default") is not False:
+        failures.append(
+            "visual_contract.json pptx_native_reconstruction_policy.allow_full_slide_backplate_by_default must be false"
+        )
+    if safe_int(policy.get("max_full_slide_or_large_raster_images_per_slide")) > 0:
+        failures.append(
+            "visual_contract.json pptx_native_reconstruction_policy.max_full_slide_or_large_raster_images_per_slide must be 0"
+        )
+    if float(policy.get("full_slide_or_large_picture_area_ratio") or 0) <= 0:
+        failures.append(
+            "visual_contract.json pptx_native_reconstruction_policy.full_slide_or_large_picture_area_ratio is missing"
+        )
+    for key, minimums in (
+        ("content_slide_thresholds", (35, 8, 60)),
+        ("simple_slide_thresholds", (10, 2, 10)),
+    ):
+        thresholds = policy.get(key) or {}
+        if safe_int(thresholds.get("minimum_native_elements")) < minimums[0]:
+            failures.append(
+                f"visual_contract.json pptx_native_reconstruction_policy.{key}.minimum_native_elements "
+                f"must be at least {minimums[0]}"
+            )
+        if safe_int(thresholds.get("minimum_visible_text_shapes")) < minimums[1]:
+            failures.append(
+                f"visual_contract.json pptx_native_reconstruction_policy.{key}.minimum_visible_text_shapes "
+                f"must be at least {minimums[1]}"
+            )
+        if safe_int(thresholds.get("minimum_editable_text_chars")) < minimums[2]:
+            failures.append(
+                f"visual_contract.json pptx_native_reconstruction_policy.{key}.minimum_editable_text_chars "
+                f"must be at least {minimums[2]}"
+            )
+    return policy
+
+
 def check_visual_contract(workspace: Path, deck_spec: dict, visual_contract: dict, failures: list[str]) -> None:
     expected_count = deck_spec.get("deck", {}).get("slide_count") or len(deck_spec.get("slides", []))
     slides = visual_contract.get("slides", [])
@@ -1136,6 +1238,7 @@ def check_visual_contract(workspace: Path, deck_spec: dict, visual_contract: dic
         postprocess_target = (safe_int(target.get("width")) or 3840, safe_int(target.get("height")) or 2160)
     check_icon_asset_policy(workspace, visual_contract, failures)
     check_render_fix_loop_policy(visual_contract, failures)
+    native_policy = check_native_reconstruction_policy(visual_contract, failures)
     check_no_html_surrogates(workspace, failures)
     selected_styles = [
         str(item)
@@ -1157,10 +1260,23 @@ def check_visual_contract(workspace: Path, deck_spec: dict, visual_contract: dic
     if default_mode not in {"pixel_locked_hybrid", "sliced_hybrid", "native_trace_hybrid", "native_rebuild"}:
         failures.append("visual_contract.json default_reconstruction_mode must be pixel_locked_hybrid, sliced_hybrid, native_trace_hybrid, or native_rebuild")
     if (
-        visual_contract.get("pixel_locked_hybrid_required") is not True
+        visual_contract.get("native_trace_hybrid_required") is True
+        and default_mode != "native_trace_hybrid"
         and visual_contract.get("explicit_downgrade_accepted") is not True
     ):
-        failures.append("visual_contract.json pixel_locked_hybrid_required must be true unless explicit_downgrade_accepted is true")
+        failures.append("visual_contract.json default_reconstruction_mode must be native_trace_hybrid unless explicit_downgrade_accepted is true")
+    if (
+        native_policy.get("require_native_trace_hybrid_by_default") is True
+        and visual_contract.get("native_trace_hybrid_required") is not True
+        and visual_contract.get("explicit_downgrade_accepted") is not True
+    ):
+        failures.append("visual_contract.json native_trace_hybrid_required must be true unless explicit_downgrade_accepted is true")
+    if (
+        visual_contract.get("pixel_locked_hybrid_required") is True
+        and visual_contract.get("native_trace_hybrid_required") is True
+        and visual_contract.get("explicit_downgrade_accepted") is not True
+    ):
+        failures.append("visual_contract.json cannot require both pixel_locked_hybrid and native_trace_hybrid by default")
     if expected_count and len(slides) != expected_count:
         failures.append(
             f"visual_contract.json has {len(slides)} slides but deck_spec expects {expected_count}"
@@ -1369,6 +1485,18 @@ def check_visual_contract(workspace: Path, deck_spec: dict, visual_contract: dic
             failures.append(
                 f"slide {idx:03d} reconstruction_mode must be pixel_locked_hybrid, sliced_hybrid, native_trace_hybrid, or native_rebuild"
             )
+        native_trace_exception = (
+            slide.get("native_trace_exception") if isinstance(slide.get("native_trace_exception"), dict) else {}
+        )
+        if (
+            native_policy.get("require_native_trace_hybrid_by_default") is True
+            and slide_reconstruction_mode != "native_trace_hybrid"
+            and native_trace_exception.get("user_accepted_risk") is not True
+            and visual_contract.get("explicit_downgrade_accepted") is not True
+        ):
+            failures.append(
+                f"slide {idx:03d} reconstruction_mode must be native_trace_hybrid unless native_trace_exception.user_accepted_risk is true"
+            )
         if slide_reconstruction_mode == "native_rebuild" and visual_contract.get("explicit_downgrade_accepted") is not True:
             comparison = slide.get("comparison_gate", {})
             if comparison.get("comp_match_status") != "approved":
@@ -1387,6 +1515,11 @@ def check_visual_contract(workspace: Path, deck_spec: dict, visual_contract: dic
             if backplate.get("insert_first") is not True:
                 failures.append(f"slide {idx:03d} comp_backplate.insert_first must be true")
         if slide_reconstruction_mode == "native_trace_hybrid":
+            thresholds = native_policy_threshold(native_policy, idx, len(slides))
+            if isinstance(backplate, dict) and backplate.get("strategy") in {"full_slide", "full_slide_exception"}:
+                failures.append(
+                    f"slide {idx:03d} native_trace_hybrid cannot use a full-slide comp backplate by default"
+                )
             trace_plan = slide.get("native_trace_plan")
             if not isinstance(trace_plan, dict):
                 failures.append(f"slide {idx:03d} native_trace_plan must be an object")
@@ -1398,12 +1531,29 @@ def check_visual_contract(workspace: Path, deck_spec: dict, visual_contract: dic
                 failures.append(
                     f"slide {idx:03d} native_trace_plan.source_image_used_as_coordinate_reference must be true"
                 )
-            if int(trace_plan.get("native_element_count") or 0) < 10:
-                failures.append(f"slide {idx:03d} native_trace_plan.native_element_count must be at least 10")
-            if int(trace_plan.get("visible_text_box_count") or 0) < 3:
-                failures.append(f"slide {idx:03d} native_trace_plan.visible_text_box_count must be at least 3")
+            if trace_plan.get("source_image_not_retained_as_full_slide_layer") is not True:
+                failures.append(
+                    f"slide {idx:03d} native_trace_plan.source_image_not_retained_as_full_slide_layer must be true"
+                )
+            if int(trace_plan.get("native_element_count") or 0) < thresholds["minimum_native_elements"]:
+                failures.append(
+                    f"slide {idx:03d} native_trace_plan.native_element_count must be at least "
+                    f"{thresholds['minimum_native_elements']}"
+                )
+            if int(trace_plan.get("visible_text_box_count") or 0) < thresholds["minimum_visible_text_shapes"]:
+                failures.append(
+                    f"slide {idx:03d} native_trace_plan.visible_text_box_count must be at least "
+                    f"{thresholds['minimum_visible_text_shapes']}"
+                )
+            if int(trace_plan.get("editable_text_char_count") or 0) < thresholds["minimum_editable_text_chars"]:
+                failures.append(
+                    f"slide {idx:03d} native_trace_plan.editable_text_char_count must be at least "
+                    f"{thresholds['minimum_editable_text_chars']}"
+                )
             if trace_plan.get("render_fix_verify_loop") is not True:
                 failures.append(f"slide {idx:03d} native_trace_plan.render_fix_verify_loop must be true")
+            if trace_plan.get("pixel_to_inch_mapping_recorded") is not True:
+                failures.append(f"slide {idx:03d} native_trace_plan.pixel_to_inch_mapping_recorded must be true")
         if not slide.get("text_mask_plan"):
             failures.append(f"slide {idx:03d} missing text_mask_plan in visual_contract.json")
         else:
@@ -1501,6 +1651,19 @@ def check_final(workspace: Path, visual_contract: dict, failures: list[str]) -> 
     output_pptx = list((workspace / "output").glob("*.pptx"))
     if not output_pptx:
         failures.append("No final PPTX found under output/")
+    native_policy = visual_contract.get("pptx_native_reconstruction_policy") or {}
+    if isinstance(native_policy, dict) and native_policy.get("enabled") is True:
+        report_ref = native_policy.get("report_path") or "qa/pptx-reconstruction-audit.json"
+        report_path = require_file(workspace, report_ref, "PPTX native reconstruction audit report", failures)
+        if report_path and report_path.exists():
+            audit = load_json(report_path, failures)
+            if audit.get("status") != "PASS":
+                failures.append("PPTX native reconstruction audit report status must be PASS")
+            summary = audit.get("summary") or {}
+            if safe_int(summary.get("total_native_elements")) <= 0:
+                failures.append("PPTX native reconstruction audit report has no native elements")
+            if safe_int(summary.get("total_editable_text_shapes")) <= 0:
+                failures.append("PPTX native reconstruction audit report has no editable text shapes")
     loop = visual_contract.get("pptx_render_fix_loop") or {}
     minimum_rounds = safe_int(loop.get("minimum_rounds")) or 0
     if minimum_rounds:

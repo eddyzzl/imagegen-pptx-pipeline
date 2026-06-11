@@ -21,7 +21,7 @@ Do not treat generated images as the content source of truth. Generated images a
 
 Do not let editable PPTX reconstruction collapse ImageGen visual comps into generic tables, square card grids, or plain text layouts. The final PPTX must preserve the selected comp's visual grammar, proof-object shape, rhythm, density, hierarchy, and major diagram composition unless an explicit source, editability, or template constraint requires a documented deviation.
 
-Default reconstruction mode is **pixel-locked hybrid**, not native-only redraw: use the approved slide comp as a full-slide or sliced visual backplate, mask/replace main text regions, and overlay visible editable native PPT text, numbers, labels, and simple shapes. A slide may use the whole comp as a visual backplate only when the required editable overlays are visible on the rendered slide surface. Hidden text boxes, speaker notes, off-canvas text, or text placed behind the backplate do not count as editable reconstruction.
+Default reconstruction mode is **native trace hybrid**, not whole-image backplate: use the approved slide comp as a pixel coordinate blueprint, rebuild visible titles, text, cards, simple diagrams, connectors, chart primitives, page chrome, and key numbers as native PPT elements, and retain only complex icons/photos/textures/ornaments as cropped image assets. Hidden text boxes, speaker notes, off-canvas text, transparent text, or text placed behind any image layer do not count as editable reconstruction.
 
 ## Hard Invariants
 
@@ -41,7 +41,7 @@ Default reconstruction mode is **pixel-locked hybrid**, not native-only redraw: 
 - **Image quality is enforced before ImageGen, after raw return, and after local repair:** before every single-slide ImageGen call, write the final prompt to `prompts/slide-XXX-comp.txt` and run `scripts/check_imagegen_comp_asset.py --prompt <prompt> --require-fallback-policy`. If the prompt does not explicitly require true 4K first, 2K/1080p fallback, same dimensions across the deck, highest detail, crisp/no-blur rendering, and tier-specific file-size floors, do not call ImageGen. After ImageGen returns, save the raw file, record the raw dimensions, run local 4K normalization/sharpening, then run the same script on the normalized `slides/slide-XXX-comp.png` without treating the raw size as the final comp size. If the normalized comp still has blurry titles, unreadable key numbers, muddy icons, or soft fine lines, regenerate through ImageGen; local sharpening is not a substitute for actual visual clarity.
 - **ImageGen retries fail closed:** ImageGen server errors, tool failures, timeout-like failures, or long-prompt failures are not permission to simplify the deck, reduce information density, switch to HTML/browser previews, or continue with ordinary PPT layouts. Retry prompts may remove transport noise and duplicated prose only; they must preserve locked slide order, titles, core claims, required data, proof-object intent, template constraints, visual density floor, and the assigned aesthetic family. After repeated failures, block and ask the user rather than marking an option ready.
 - **Images are iterated before PPTX:** subagents/reviewer roles review each single-slide comp. P0/P1 findings must trigger targeted ImageGen regeneration of that slide before PPTX authoring.
-- **PPTX is a pixel-locked hybrid reconstruction of the approved comp:** final slides must preserve the approved comp's appearance by default. Use full-slide or sliced comp backplates when native shape rebuilding would degrade the design, then overlay editable main text/numbers/simple shapes from `deck_spec.json`. Native-only redraw is allowed only when it visibly matches the comp or the user explicitly accepts a fidelity downgrade.
+- **PPTX is a native-trace reconstruction of the approved comp:** final slides must preserve the approved comp's appearance while rebuilding the reader-facing structure as native PPT elements. Full-slide image backplates are downgrade exceptions, not the default, and require explicit user acceptance or a documented unavoidable retained-image exception.
 - **Editable does not mean fully native:** complex diagrams, depth fields, textures, glow, glass, illustrations, screenshots, dense icons, and generated visual systems may remain image layers. Required editability applies to main titles, claims, body text, key numbers, labels, footers, and simple callouts unless a user-approved exception is documented.
 - **Visible editability is mandatory:** editable content must be visible and selectable in the final slide itself. Speaker notes, hidden layers, transparent text, off-slide text, or text covered by a full-slide image are useful references but fail the editability requirement.
 - **Reconstruction-only may skip planning, not fidelity:** when the user supplies final per-slide images, use `reconstruction-only` mode. Skip content/narrative/style generation, but still require per-slide image registration, exact text/OCR verification, visual contract, page-level reconstruction review, rendered previews, and final council.
@@ -198,7 +198,7 @@ Write and lock:
 
 - `reconstruction_manifest.json`: source image path, text source status, reconstruction mode, per-slide output path, and page-sharding status.
 - minimal `deck_spec.json`: slide count, slide IDs, exact overlay text when known, and editability targets. Set `deck.lock_state="locked"` after text is provided or OCR is verified/accepted.
-- `visual_contract.json`: each supplied image becomes the approved comp with `reconstruction_mode="pixel_locked_hybrid"` unless explicitly overridden. Use `native_trace_hybrid` when the user prioritizes visible editability and the slide can be traced into native PPT elements without collapsing the design.
+- `visual_contract.json`: each supplied image becomes the approved comp with `reconstruction_mode="native_trace_hybrid"` by default. Use `pixel_locked_hybrid` or full-slide image backplates only when the user explicitly accepts limited editability and the exception is recorded.
 
 In this mode:
 
@@ -209,11 +209,11 @@ In this mode:
 Page-sharded build rules:
 
 1. Build each slide independently as `slide-modules/slide-XXX.pptx`.
-2. Use the source image as a full-slide or sliced backplate.
-3. Mask/cover source-image text areas that will be editable.
-4. Overlay editable native PPT text/numbers/labels/page markers.
-5. Keep complex visuals as image layers. Do not redraw them as ordinary PPT tables, cards, or boxes.
-6. Verify that required editable overlays are visible on the slide surface and not hidden behind the backplate.
+2. Use the source image as a coordinate blueprint. Do not retain it as the visible full-slide layer by default.
+3. Rebuild visible PPT structure natively: text, section tags, cards, dividers, flows, loops, arrows, simple charts, simple tables, and page chrome.
+4. Insert only processed cropped image assets for complex icons, photos, textures, official marks, or hard-to-trace fragments.
+5. Do not redraw the design as ordinary PPT tables, cards, or boxes.
+6. Verify that required editable content is visible on the slide surface and not hidden behind any image layer.
 7. Render `preview/slide-XXX-pptx.png` and compare against the source image before merging.
 8. If a slide fails visual fidelity or visible editability, repair only that slide module and rerender.
 9. Merge approved slide modules into the final deck only after all page-level P0/P1 findings are resolved or explicitly accepted.
@@ -601,9 +601,9 @@ For each slide record:
 - protected template elements that must survive final PPTX reconstruction
 - selected style option
 - visual archetype: system map, maturity arc, loop, funnel, radial, timeline, swimlane, matrix, scorecard, dashboard, process chain, comparison, or other
-- reconstruction mode: `pixel_locked_hybrid` by default, `sliced_hybrid` when text/diagram regions need separate editable overlays, `native_trace_hybrid` when the source image should be hand-traced into mostly native editable PPT elements, or `native_rebuild` only with explicit fidelity evidence or user acceptance
-- comp backplate plan: full-slide comp image or cropped comp layers that must be inserted before native overlays
-- text mask plan: regions where comp-rendered text should be covered before adding editable PPT text
+- reconstruction mode: `native_trace_hybrid` by default, `sliced_hybrid` only for documented complex subregions, `pixel_locked_hybrid` only with explicit user-accepted limited editability, or `native_rebuild` only with explicit fidelity evidence or user acceptance
+- native trace plan: source image coordinate mapping, native element density, visible editable text density, retained image exceptions, and proof that the source image is not retained as a full-slide visible layer
+- text mask plan: only required for `pixel_locked_hybrid` or retained image subregions where comp-rendered text would duplicate editable PPT text
 - must-preserve composition: key regions, flow direction, diagram geometry, focal object, whitespace, and visual hierarchy
 - allowed simplifications for editability
 - prohibited regressions, especially `table-only`, `square-card-only`, `default-template`, and `text-heavy` when the comp uses richer diagrams
@@ -623,7 +623,7 @@ Do not proceed to PPTX build until:
 - every generated-deck slide records a completed `normalization` object showing `scripts/normalize_slide_comp.py` was applied and the downstream approved comp is `3840x2160`
 - every slide has `clarity_review.status=approved` or a documented user-accepted risk; low-resolution or blurry comps are blocked
 - every slide has `style_continuity_review.status=approved` and confirms matching page chrome/recurring elements
-- every slide has a reconstruction mode, comp backplate plan, editable overlay plan, and text mask plan
+- every slide has `reconstruction_mode="native_trace_hybrid"` by default, a native trace plan, visible editable text plan, processed icon plan, and documented retained-image exceptions
 - every slide has a visual archetype and native reconstruction plan
 - every template-following slide has a mapped source slide and protected template elements
 - at least 60% of non-title slides use a non-table proof object when the selected style contains diagrams or visual systems
@@ -638,7 +638,9 @@ Read `references/schemas.md` for `visual_contract.json`.
 
 Use `Presentations` and artifact-tool presentation JSX.
 
-Treat the approved comp as the slide construction drawing and visual backplate. The default target is pixel-locked hybrid fidelity: the rendered PPTX preview should look like the approved comp at normal viewing size, while main information remains editable. A final slide that only preserves the text and template frame while discarding the comp's visual expression fails reconstruction.
+Before writing PPTX code, read `references/native-reconstruction-playbook.md`.
+
+Treat the approved comp as the slide construction drawing and coordinate blueprint, not the final visible layer. The default target is `native_trace_hybrid`: the rendered PPTX preview should look like the approved comp at normal viewing size, while the visible slide is substantially rebuilt from native PPT text, shapes, connectors, chart primitives, and processed transparent icon assets. A final slide that is mostly one pasted image fails reconstruction unless the user explicitly accepted that downgrade.
 
 Before writing PPTX code, prepare reusable icon assets:
 
@@ -650,9 +652,9 @@ Before writing PPTX code, prepare reusable icon assets:
 
 Reconstruction modes:
 
-- `pixel_locked_hybrid` (default): place the approved comp as a full-slide image backplate, cover/mask text areas that must become editable, then overlay native PPT text, key numbers, labels, simple shapes, and page furniture. This gives the highest visual fidelity.
-- `sliced_hybrid`: crop the comp into stable visual layers or regions, omit/mask text-heavy regions, then rebuild those regions natively. Use this for dense slides where text editability is important.
-- `native_trace_hybrid`: use the approved comp as a coordinate reference, then rebuild the slide from native PPT shapes, text boxes, connectors, icons, arrows, and chart primitives. Keep only genuinely complex textures, photos, tiny labels, or hard-to-recreate visual details as image snippets. Use this when the user rejects image-only/hidden-text output and wants the rendered slide itself to be substantially editable.
+- `native_trace_hybrid` (default): use the approved comp as a coordinate reference, then rebuild the slide from native PPT shapes, text boxes, connectors, icons, arrows, and chart primitives. Keep only genuinely complex textures, photos, tiny labels, or hard-to-recreate visual details as cropped image snippets.
+- `sliced_hybrid`: crop stable visual regions from the comp, but rebuild all main text, cards, connectors, simple charts, and page furniture natively. Use only for documented subregions that cannot be traced cleanly.
+- `pixel_locked_hybrid`: place the approved comp as a full-slide image backplate, cover/mask text areas, then overlay native PPT text. This is a downgrade mode now, not the default. Use only when the user explicitly accepts limited editability or when a documented exception is unavoidable.
 - `native_rebuild`: rebuild with native shapes/charts only. Use only when it passes preview comparison or the user explicitly accepts that it will not be pixel-faithful.
 
 For **template-following** mode:
@@ -663,23 +665,25 @@ For **template-following** mode:
 - Do not rebuild from blank JSX, mutate OOXML directly, or use LibreOffice save-as.
 - Treat ImageGen comps as the approved visual reference inside the inherited template canvas; the final deck must still inherit from duplicated template/source slides.
 - Preserve the approved comp's proof-object archetype and composition inside the inherited template canvas. Template-following is not permission to replace a system map, loop, radial, maturity arc, or workflow comp with a generic table/card grid.
-- Use pixel-locked hybrid reconstruction aggressively: insert the approved comp or sliced comp layers first, then rebuild main text and simple geometry as native PPT elements. Complex backgrounds, textures, depth, illustrations, and diagrams should remain image layers when native rebuilding would collapse the design.
+- Use native trace reconstruction inside the template canvas: rebuild main text, simple geometry, cards, connectors, tables, and page furniture as native PPT elements while retaining only complex backgrounds, textures, depth, illustrations, logos, or detailed icons as cropped image assets.
 - If the inherited template cannot support the approved comp's visual expression, split the slide, choose a more suitable source slide, regenerate the comp within the template frame, or document a P1 deviation and ask the user. Do not silently degrade the slide.
 
 For **create** mode:
 
 - Build slides from `deck_spec.json`, `slide_intent_plan.json`, `narrative_plan.json`, `design_system.json`, and approved visual comps.
-- Insert the approved comp as a full-slide or sliced backplate before adding editable overlays, unless the slide is explicitly marked `native_rebuild` with evidence.
-- Main text, numbers, footers, and page markers must be native editable PPT elements.
-- Preserve complex visual assets as cropped high-quality images when rebuilding them as native shapes would degrade quality.
+- Use the approved comp as the coordinate reference. Do not insert it as the visible full-slide base layer by default.
+- Main text, numbers, cards, footers, page markers, dividers, flow bars, simple charts, and connectors must be native editable PPT elements whenever practical.
+- Preserve complex visual assets as cropped high-quality images only when rebuilding them as native shapes would degrade quality.
 
 For **reconstruction-only** and **repair-existing-pptx** mode:
 
 - Treat each user-supplied slide image as the approved comp.
 - Build one independent PPTX module per slide under `slide-modules/slide-XXX.pptx`.
 - Do not create ordinary-looking native tables/cards/text blocks as a substitute for the image design.
-- Native text boxes are allowed only for visible editable overlays and must match the source image's typography, position, color, line breaks, and hierarchy.
-- Keep complex visual design, diagrams, shadows, depth, icons, and background systems as full-slide or sliced image backplates.
+- Use native trace by default. The source image is a coordinate blueprint; it is not retained as the full-slide visible layer.
+- Native text boxes must be visible, editable, and match the source image's typography, position, color, line breaks, and hierarchy.
+- Rebuild cards, simple diagrams, dividers, arrows, loops, flows, timelines, simple charts, and page chrome as native elements.
+- Keep only complex visual design fragments, shadows, depth, icons, photos, official marks, and detailed background systems as cropped image assets.
 - Render and approve each slide module before merging. Do not merge failed pages into the final deck.
 - Merge approved slide modules into `output/<deck-name>.pptx` only after all page-level previews pass `pptx-reconstruction-fidelity`.
 
@@ -693,7 +697,7 @@ When using `native_trace_hybrid`:
 - Native trace is page-sharded by default. For multi-page decks, first build one representative high-complexity page as a calibration sample, then apply the learned scale, fonts, icon sizing, and QA thresholds to the remaining pages.
 - If a native-traced page still has P0/P1 visual issues after two repair passes, downgrade only the failing subregion to a sliced image layer and document that retained-image area.
 
-Never deliver a slide as only one flat image with no editable main information unless the user explicitly requests non-editable output. Never count hidden, transparent, off-canvas, notes-only, or behind-backplate text as editable main information. A whole-slide comp backplate is allowed and recommended when it is combined with visible editable overlays and documented retained-image areas.
+Never deliver a slide as only one flat image with no editable main information unless the user explicitly requests non-editable output. Never count hidden, transparent, off-canvas, notes-only, or behind-backplate text as editable main information. A whole-slide comp backplate is no longer the default; it requires `native_trace_exception.user_accepted_risk=true` or `explicit_downgrade_accepted=true`.
 
 After building each slide, render a preview and compare it against the approved comp before moving on. P1 visual-fidelity or template-fidelity failures require slide-level iteration before final deck review.
 
@@ -704,6 +708,7 @@ Run at least 9 render/compare/fix rounds for each PPTX output style:
 - Fix layout drift, missing/overlapping text, wrong icon size, clipped transparent PNGs, broken masking, header/footer drift, color mismatch, and degraded diagram geometry.
 - Record every round in `qa/render-fix/render_fix_rounds.json` with rendered preview paths, findings, fixes, and unresolved issues.
 - Do not finalize until `completed_rounds >= 9` and `unresolved_p0_p1` is empty.
+- Run `scripts/audit_pptx_reconstruction.py --pptx <output.pptx> --visual-contract <visual_contract.json> --report <workspace>/qa/pptx-reconstruction-audit.json`. Do not finalize unless the audit report status is `PASS`.
 
 ### 13. Final Deck Council Review And Export
 
@@ -740,6 +745,7 @@ Blocking QA:
 - Approved comps and PPTX previews have no blocking blur, muddy icons, unreadable key numbers, or soft fine-line artifacts.
 - PPTX previews pass reconstruction-fidelity review against the approved comp; logical correctness without visual reconstruction is not enough.
 - `qa/render-fix/render_fix_rounds.json` records at least 9 completed render/compare/fix rounds and no unresolved P0/P1 findings.
+- `qa/pptx-reconstruction-audit.json` is `PASS`; final slides are not image-only or image-dominant.
 - Processed retained icons are transparent PNGs with padding and no clipped colored pixels.
 - Final PPTX preserves `visual_contract.json` archetypes; no unapproved collapse to table-only/card-only/default layouts.
 - Template-following decks pass source-template fidelity gates, preserve mapped template elements, and have no unapproved rebuild-from-blank slides.
@@ -761,6 +767,7 @@ Keep only final deliverables in `output/`: the final PPTX, final preview contact
 - `references/schemas.md`: required intermediate JSON/Markdown files.
 - `references/prompt-templates.md`: ImageGen and PPTX reconstruction prompts.
 - `references/subagent-rubrics.md`: reviewer roles, feedback schema, and spawn guidance.
+- `references/native-reconstruction-playbook.md`: image-to-editable-PPTX native trace method and audit gate.
 - `references/taste-system.md`: bundled PPT taste system, anti-generic rules, profile-specific visual guidance, and ImageGen/PPTX reconstruction taste constraints.
 - `references/taste-integration.md`: optional external taste-source supplement rules.
 

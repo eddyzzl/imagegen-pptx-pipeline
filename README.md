@@ -139,11 +139,13 @@ tools/sync-to-codex.sh --codex-home /path/to/.codex
 - Blurry titles, unreadable key numbers, muddy icons, soft fine lines, low-resolution comps, or compression artifacts are P1 blockers unless the user explicitly accepts the risk.
 - Local 4K normalization improves uniform dimensions and edge clarity, but it does not recover unreadable source text or missing icon detail. Visual-clarity review still decides whether to regenerate.
 - Retained icons should be processed into transparent PNGs with padding before being placed into PPTX.
-- PPTX reconstruction defaults to pixel-locked hybrid fidelity: approved comps may be used as full-slide or sliced visual backplates, with visible editable text/numbers/simple shapes overlaid after masking source-image text regions.
-- The workflow does not promise that every complex visual becomes native editable PPT geometry; it preserves complex visuals as image layers when that is required for visual fidelity.
+- PPTX reconstruction defaults to native trace hybrid fidelity: approved comps are pixel coordinate blueprints, while main visible structure is rebuilt from native PPT text, shapes, connectors, chart primitives, and processed transparent icon assets.
+- Full-slide comp backplates are downgrade exceptions, not the default. Use them only when the user explicitly accepts limited editability or when a documented retained-image exception is unavoidable.
+- The workflow does not promise that every complex visual becomes native editable PPT geometry; it preserves complex icons, photos, texture, official marks, and hard visual fragments as cropped image layers when that is required for visual fidelity.
 - Hidden text boxes, speaker notes, off-canvas text, transparent text, or text placed behind a full-slide image do not count as editable reconstruction.
-- For image-to-editable-slide work, use `native_trace_hybrid` when visible editability matters more than exact pixel identity: the source image becomes a coordinate reference, while major cards, text, arrows, icons, charts, and connectors are rebuilt as native PPT elements and verified by render/fix loops.
+- For image-to-editable-slide work, `native_trace_hybrid` is the default: the source image becomes a coordinate reference, while major cards, text, arrows, icons, charts, and connectors are rebuilt as native PPT elements and verified by render/fix loops.
 - PPTX reconstruction must not downgrade rich comps into generic tables or card grids.
 - Final decks must pass at least 9 render/compare/fix rounds against the approved normalized comps.
+- Final decks must pass `scripts/audit_pptx_reconstruction.py`, which rejects image-only or image-dominant PPTX output.
 - Reconstruction-only uses page-sharded modules: `slide-modules/slide-XXX.pptx` is reviewed before merging into the final deck.
 - Every user pause is stateful through `pipeline_state.json`.

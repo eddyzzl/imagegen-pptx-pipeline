@@ -201,6 +201,33 @@ DEFAULT_PPTX_RENDER_FIX_LOOP = {
     "block_on_unresolved_p0_p1": True,
 }
 
+DEFAULT_PPTX_NATIVE_RECONSTRUCTION_POLICY = {
+    "enabled": True,
+    "audit_script": "scripts/audit_pptx_reconstruction.py",
+    "report_path": "qa/pptx-reconstruction-audit.json",
+    "require_native_trace_hybrid_by_default": True,
+    "source_image_is_coordinate_blueprint": True,
+    "source_image_may_not_be_retained_as_full_slide_layer": True,
+    "allow_full_slide_backplate_by_default": False,
+    "max_full_slide_or_large_raster_images_per_slide": 0,
+    "full_slide_or_large_picture_area_ratio": 0.85,
+    "content_slide_thresholds": {
+        "minimum_native_elements": 35,
+        "minimum_visible_text_shapes": 8,
+        "minimum_editable_text_chars": 60,
+    },
+    "simple_slide_thresholds": {
+        "minimum_native_elements": 10,
+        "minimum_visible_text_shapes": 2,
+        "minimum_editable_text_chars": 10,
+    },
+    "notes": (
+        "The source comp is a coordinate blueprint. Rebuild main cards, text, connectors, "
+        "basic charts, page furniture, and simple diagrams as native PPT elements. Retain only "
+        "icons, photos, complex textures, and genuinely hard-to-rebuild art as cropped images."
+    ),
+}
+
 
 def slugify(value: str) -> str:
     value = value.strip().lower()
@@ -583,12 +610,14 @@ def main() -> int:
         "downgrade_mode": False,
         "explicit_downgrade_accepted": False,
         "comp_is_construction_drawing": True,
-        "default_reconstruction_mode": "pixel_locked_hybrid",
-        "pixel_locked_hybrid_required": True,
+        "default_reconstruction_mode": "native_trace_hybrid",
+        "native_trace_hybrid_required": True,
+        "pixel_locked_hybrid_required": False,
         "minimum_non_title_rich_visual_ratio": 0.6,
         "image_quality_policy": DEFAULT_IMAGE_QUALITY_POLICY,
         "icon_asset_policy": DEFAULT_ICON_ASSET_POLICY,
         "pptx_render_fix_loop": DEFAULT_PPTX_RENDER_FIX_LOOP,
+        "pptx_native_reconstruction_policy": DEFAULT_PPTX_NATIVE_RECONSTRUCTION_POLICY,
         "slides": [],
     }
     reconstruction_manifest = {
@@ -604,7 +633,11 @@ def main() -> int:
         },
         "global_rules": {
             "skip_full_pipeline_gates": args.mode in {"reconstruction-only", "repair-existing-pptx"},
-            "visual_fidelity_priority": "pixel_locked_hybrid",
+            "visual_fidelity_priority": "native_trace_hybrid",
+            "source_image_is_coordinate_blueprint_not_final_layer": True,
+            "native_trace_hybrid_default": True,
+            "full_slide_image_backplate_forbidden_by_default": True,
+            "native_density_audit_required": True,
             "ordinary_table_or_card_rebuild_forbidden": True,
             "native_text_boxes_allowed_only_as_transparent_overlays": True,
             "hidden_text_layer_does_not_count_as_editable": True,

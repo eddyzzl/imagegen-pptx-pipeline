@@ -4,12 +4,13 @@
 from __future__ import annotations
 
 import argparse
+from collections import deque
 import json
 import sys
 from pathlib import Path
 
 try:
-    from PIL import Image, ImageFilter
+    from PIL import Image, ImageDraw, ImageFilter
 except ImportError as exc:  # pragma: no cover - dependency diagnostic
     print(
         "FAIL: Pillow is required. Install it with `conda run -n py_313 python -m pip install pillow` "
@@ -42,15 +43,65 @@ def int_box(raw: dict, expansion: int, max_width: int, max_height: int) -> tuple
     return x1, y1, x2, y2
 
 
-def remove_light_background(image: Image.Image, threshold: int) -> Image.Image:
+def remove_edge_background(image: Image.Image, threshold: int) -> Image.Image:
+    """Remove only edge-connected background, preserving intentional white icon strokes."""
+    rgb = image.convert("RGB")
+    width, height = rgb.size
+    corners = [rgb.getpixel(point) for point in ((0, 0), (width - 1, 0), (0, height - 1), (width - 1, height - 1))]
+    bg = tuple(sum(color[i] for color in corners) // 4 for i in range(3))
+    padded = Image.new("RGB", (width + 6, height + 6), bg)
+    padded.paste(rgb, (3, 3))
+    ImageDraw.floodfill(padded, (0, 0), (255, 0, 255), thresh=threshold)
+    flood = padded.load()
     rgba = image.convert("RGBA")
     pixels = rgba.load()
-    for y in range(rgba.height):
-        for x in range(rgba.width):
+    for y in range(height):
+        for x in range(width):
             r, g, b, a = pixels[x, y]
-            if a == 0:
+            if flood[x + 3, y + 3] == (255, 0, 255):
+                pixels[x, y] = (r, g, b, 0)
+    return rgba
+
+
+def keep_components_intersecting_core(image: Image.Image, core_box: tuple[int, int, int, int]) -> Image.Image:
+    rgba = image.convert("RGBA")
+    pixels = rgba.load()
+    width, height = rgba.size
+    alpha_mask = [[pixels[x, y][3] > 40 for x in range(width)] for y in range(height)]
+    seen = [[False] * width for _ in range(height)]
+    keep = [[False] * width for _ in range(height)]
+    cx1, cy1, cx2, cy2 = core_box
+    for sy in range(height):
+        for sx in range(width):
+            if not alpha_mask[sy][sx] or seen[sy][sx]:
                 continue
-            if r >= threshold and g >= threshold and b >= threshold:
+            queue = deque([(sx, sy)])
+            seen[sy][sx] = True
+            component: list[tuple[int, int]] = []
+            intersects_core = False
+            while queue:
+                x, y = queue.popleft()
+                component.append((x, y))
+                if cx1 <= x <= cx2 and cy1 <= y <= cy2:
+                    intersects_core = True
+                for dx in (-1, 0, 1):
+                    for dy in (-1, 0, 1):
+                        nx, ny = x + dx, y + dy
+                        if (
+                            0 <= nx < width
+                            and 0 <= ny < height
+                            and alpha_mask[ny][nx]
+                            and not seen[ny][nx]
+                        ):
+                            seen[ny][nx] = True
+                            queue.append((nx, ny))
+            if intersects_core and len(component) >= 12:
+                for x, y in component:
+                    keep[y][x] = True
+    for y in range(height):
+        for x in range(width):
+            if not keep[y][x]:
+                r, g, b, _ = pixels[x, y]
                 pixels[x, y] = (r, g, b, 0)
     return rgba
 
@@ -74,10 +125,18 @@ def process_icon(workspace: Path, entry: dict, defaults: dict) -> dict:
         raise FileNotFoundError(f"source image does not exist: {source_path}")
     with Image.open(source_path) as source:
         source.load()
-        crop_box = int_box(entry.get("bbox_px", {}), expansion, source.width, source.height)
+        raw_box = entry.get("bbox_px", {})
+        crop_box = int_box(raw_box, expansion, source.width, source.height)
         crop = source.convert("RGBA").crop(crop_box)
 
-    keyed = remove_light_background(crop, threshold)
+    core_box = (
+        max(int(raw_box.get("left", 0)) - crop_box[0], 0),
+        max(int(raw_box.get("top", 0)) - crop_box[1], 0),
+        min(int(raw_box.get("left", 0)) + int(raw_box.get("width", 0)) - crop_box[0], crop.width - 1),
+        min(int(raw_box.get("top", 0)) + int(raw_box.get("height", 0)) - crop_box[1], crop.height - 1),
+    )
+    keyed = remove_edge_background(crop, threshold)
+    keyed = keep_components_intersecting_core(keyed, core_box)
     alpha = keyed.getchannel("A")
     alpha_bbox = alpha.getbbox()
     if alpha_bbox is None:
@@ -125,6 +184,7 @@ def process_icon(workspace: Path, entry: dict, defaults: dict) -> dict:
         "edge_clear": edge_clear,
         "possible_crop_clipping": possible_clip,
         "file_size_bytes": output_path.stat().st_size,
+        "background_removal": "edge_floodfill_plus_core_component_filter",
     }
 
 

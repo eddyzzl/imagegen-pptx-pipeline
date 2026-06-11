@@ -941,8 +941,9 @@ Use after ImageGen style selection and single-slide comps, before PPTX authoring
   "downgrade_mode": false,
   "explicit_downgrade_accepted": false,
   "comp_is_construction_drawing": true,
-  "default_reconstruction_mode": "pixel_locked_hybrid",
-  "pixel_locked_hybrid_required": true,
+  "default_reconstruction_mode": "native_trace_hybrid",
+  "native_trace_hybrid_required": true,
+  "pixel_locked_hybrid_required": false,
   "minimum_non_title_rich_visual_ratio": 0.6,
   "image_quality_policy": {
     "policy_id": "imagegen-max-clarity-v1",
@@ -1023,6 +1024,27 @@ Use after ImageGen style selection and single-slide comps, before PPTX authoring
     "compare_against": "approved 4K normalized comps",
     "block_on_unresolved_p0_p1": true
   },
+  "pptx_native_reconstruction_policy": {
+    "enabled": true,
+    "audit_script": "scripts/audit_pptx_reconstruction.py",
+    "report_path": "qa/pptx-reconstruction-audit.json",
+    "require_native_trace_hybrid_by_default": true,
+    "source_image_is_coordinate_blueprint": true,
+    "source_image_may_not_be_retained_as_full_slide_layer": true,
+    "allow_full_slide_backplate_by_default": false,
+    "max_full_slide_or_large_raster_images_per_slide": 0,
+    "full_slide_or_large_picture_area_ratio": 0.85,
+    "content_slide_thresholds": {
+      "minimum_native_elements": 35,
+      "minimum_visible_text_shapes": 8,
+      "minimum_editable_text_chars": 60
+    },
+    "simple_slide_thresholds": {
+      "minimum_native_elements": 10,
+      "minimum_visible_text_shapes": 2,
+      "minimum_editable_text_chars": 10
+    }
+  },
   "slides": [
     {
       "slide_id": "slide-001",
@@ -1070,12 +1092,23 @@ Use after ImageGen style selection and single-slide comps, before PPTX authoring
       },
       "iteration_count": 1,
       "visual_archetype": "maturity arc | system map | loop | funnel | radial | timeline | swimlane | matrix | scorecard | dashboard | process chain | comparison | title",
-      "reconstruction_mode": "pixel_locked_hybrid | sliced_hybrid | native_trace_hybrid | native_rebuild",
+      "reconstruction_mode": "native_trace_hybrid | sliced_hybrid | pixel_locked_hybrid | native_rebuild",
+      "native_trace_plan": {
+        "source_image_used_as_coordinate_reference": true,
+        "source_image_used_as_coordinate_blueprint": true,
+        "source_image_not_retained_as_full_slide_layer": true,
+        "pixel_to_inch_mapping_recorded": true,
+        "native_element_count": 80,
+        "visible_text_box_count": 14,
+        "editable_text_char_count": 180,
+        "render_fix_verify_loop": true,
+        "retained_image_exceptions": []
+      },
       "comp_backplate": {
-        "strategy": "full_slide | sliced_layers | none",
-        "path": "slides/slide-001-comp.png",
-        "insert_first": true,
-        "covers_full_slide": true
+        "strategy": "none | sliced_layers | full_slide_exception",
+        "path": "",
+        "insert_first": false,
+        "covers_full_slide": false
       },
       "text_mask_plan": [
         {
@@ -1084,13 +1117,18 @@ Use after ImageGen style selection and single-slide comps, before PPTX authoring
           "reason": "avoid duplicate image text behind editable text"
         }
       ],
-      "editable_overlay_plan": [
-        "editable title",
-        "editable claim",
-        "editable key numbers",
-        "editable footer/page marker",
-        "editable main labels"
-      ],
+      "editable_overlay_plan": {
+        "visible_native_text_overlay": true,
+        "visible_overlay_count": 14,
+        "native_shape_count": 66,
+        "regions": [
+          "editable title",
+          "editable claim",
+          "editable key numbers",
+          "editable footer/page marker",
+          "editable main labels"
+        ]
+      },
       "must_preserve": [
         "large maturity arc from lower left to upper right",
         "three phase nodes connected by red line",
@@ -1146,17 +1184,17 @@ Use after ImageGen style selection and single-slide comps, before PPTX authoring
 
 Rules:
 
-- `default_reconstruction_mode` should be `pixel_locked_hybrid`; use `native_rebuild` only with preview evidence or explicit user acceptance.
+- `default_reconstruction_mode` should be `native_trace_hybrid`; use `pixel_locked_hybrid`, `sliced_hybrid`, or `native_rebuild` only with documented exception evidence or explicit user acceptance.
 - In generated-deck mode, `comp_generation_mode` must be `main_agent_serial_imagegen` or `style_sharded_serial_imagegen`; page-level subagents may review or draft prompt notes but must not independently call ImageGen for final single-slide comps.
 - `style_sharded_serial_imagegen` means one style-lane agent generates one whole style set serially. It requires `parallel_style_agents_used=true`, `parallel_page_subagents_used=false`, and `comp_style_lock.generation_owner="style_agent"` or `"main_agent"`.
 - `parallel_page_subagents_used` must be false unless the user explicitly accepted the style-drift risk in `user_decisions.md` and `explicit_parallel_comp_generation_accepted=true`.
 - `comp_style_lock.chrome_locked` must be true. The lock must include at least logo, footer, page number/page marker, and a header/title/section treatment so recurring slide chrome cannot drift between pages.
-- Each slide must have `reconstruction_mode`, `comp_backplate`, `text_mask_plan`, and `editable_overlay_plan` before PPTX authoring.
+- Each slide must have `reconstruction_mode`, `native_trace_plan`, `editable_overlay_plan`, and retained-image exception documentation before PPTX authoring.
 - Each generated-deck slide must have a completed `normalization` record from `scripts/normalize_slide_comp.py`; `comp_path` points to the normalized 4K image, while `raw_comp_path` points to the raw ImageGen return.
 - Each slide must have `clarity_review.status=approved` or `user_accepted_risk` before PPTX authoring. Blurry titles, key numbers, icons, fine lines, or comps below the normalized 4K target block `before-pptx`. A raw fallback to 2K or 1080p is acceptable only when recorded in `imagegen_resolution_fallback_log.json`; final approved comps still normalize to 3840x2160.
 - Each generated-deck slide must have `style_continuity_review.status=approved`, `matches_comp_style_lock=true`, `page_chrome_consistent=true`, and `recurring_elements_consistent=true` before PPTX authoring.
-- `pixel_locked_hybrid` and `sliced_hybrid` slides must insert the approved comp or cropped comp layers before native overlays.
-- A whole-slide comp backplate is allowed. A final slide that is only a flat image with no editable main information is not allowed unless the user explicitly requested non-editable output.
+- `native_trace_hybrid` slides must use the approved comp as a coordinate blueprint and must not retain the source image as a full-slide visible layer.
+- `pixel_locked_hybrid` and full-slide backplates are downgrade exceptions. A final slide that is only a flat image with no editable main information is not allowed unless the user explicitly requested non-editable output.
 - In `reconstruction-only` and `repair-existing-pptx` modes, `contact_sheet` is optional and `selected_style` should be `user-supplied-final-images` or `repaired-from-source-images`.
 - A final PPTX slide must keep the slide's `visual_archetype` unless `deviation_notes` explains a source/template/editability blocker.
 - If `template_mode` is `hard`, every slide must preserve its mapped source slide's protected elements unless `deviation_notes` and `deviation-log.md` document explicit user acceptance.
@@ -1165,6 +1203,7 @@ Rules:
 - If multiple style sets are selected, `style_runs[]` keeps all completed sets, but the top-level `slides[]` must be the set currently being converted or checked.
 - `icon_asset_policy` requires transparent padded PNG icon assets before PPTX reconstruction. Processed icons may be retained image layers, but they must not be clipped or pasted with unwanted white backgrounds.
 - `pptx_render_fix_loop.minimum_rounds` must be at least 9 and its rounds log must be complete before final export.
+- `pptx_native_reconstruction_policy` requires `scripts/audit_pptx_reconstruction.py` and a PASS report at `qa/pptx-reconstruction-audit.json` before final export.
 - If `downgrade_mode` is true, `user_decisions.md` must explain that the user accepted a style-inspired rebuild rather than comp-faithful reconstruction. Do not infer this from automation mode.
 - The final council must compare PPTX previews against this file.
 
@@ -1201,7 +1240,7 @@ Rules:
 - Run `scripts/prepare_icon_assets.py --manifest <manifest> --workspace <workspace> --strict`.
 - If strict mode reports possible clipping, enlarge `bbox_px` or `default_crop_expansion_px` and rerun.
 - Processed icons must have transparent background, transparent padding, and `edge_clear=true` before they are inserted into PPTX.
-- Do not use this for large complex diagrams. Use sliced comp backplates for complex visual systems and processed icons only for reusable simple pictograms, badges, and line symbols.
+- Do not use this for large complex diagrams. Use small cropped retained image fragments for genuinely hard-to-trace visual systems, and processed icons only for reusable simple pictograms, badges, and line symbols.
 
 ## render_fix_rounds.json
 
@@ -1252,9 +1291,17 @@ Use when `deck.mode` is `reconstruction-only` or `repair-existing-pptx`.
   },
   "global_rules": {
     "skip_full_pipeline_gates": true,
-    "visual_fidelity_priority": "pixel_locked_hybrid",
+    "visual_fidelity_priority": "native_trace_hybrid",
+    "source_image_is_coordinate_blueprint_not_final_layer": true,
+    "native_trace_hybrid_default": true,
+    "full_slide_image_backplate_forbidden_by_default": true,
+    "native_density_audit_required": true,
     "ordinary_table_or_card_rebuild_forbidden": true,
-    "native_text_boxes_allowed_only_as_transparent_overlays": true
+    "native_text_boxes_allowed_only_as_transparent_overlays": true,
+    "hidden_text_layer_does_not_count_as_editable": true,
+    "visible_native_overlays_required": true,
+    "processed_icon_assets_required": true,
+    "minimum_render_fix_rounds": 9
   },
   "slides": [
     {
@@ -1263,13 +1310,26 @@ Use when `deck.mode` is `reconstruction-only` or `repair-existing-pptx`.
       "source_image_path": "slides/slide-001-comp.png",
       "text_source_status": "provided | ocr_verified | user_accepted_image_text | image_only_accepted",
       "text_source_path": "input/slide-001-text.md",
-      "reconstruction_mode": "pixel_locked_hybrid",
+      "reconstruction_mode": "native_trace_hybrid",
+      "native_trace_plan": {
+        "source_image_used_as_coordinate_blueprint": true,
+        "source_image_not_retained_as_full_slide_layer": true,
+        "pixel_to_inch_mapping_recorded": true,
+        "native_element_count": 80,
+        "visible_text_box_count": 14,
+        "editable_text_char_count": 180,
+        "render_fix_verify_loop": true
+      },
       "required_editable_overlays": [
         "title",
         "body",
         "key numbers",
         "footer/page marker"
       ],
+      "editable_overlay_coverage": {
+        "visible_native_text_overlay": true,
+        "visible_overlay_count": 14
+      },
       "output_slide_pptx": "slide-modules/slide-001.pptx",
       "preview_path": "preview/slide-001-pptx.png",
       "review_status": "not_started | needs_iteration | approved | user_accepted_risk"
@@ -1284,6 +1344,7 @@ Rules:
 - `lock_state` must be `locked` before PPTX reconstruction starts.
 - Each slide must point to an existing high-resolution source image. A full-deck contact sheet is not a substitute unless the user accepts lower fidelity.
 - `text_source_status` must be explicit. If text is OCR-derived, it must be verified or accepted before final export.
+- `reconstruction_mode` defaults to `native_trace_hybrid`; whole-slide image backplates require `native_trace_exception.user_accepted_risk=true`.
 - `page_sharding.enabled`, `per_slide_pptx_required`, and `merge_after_page_approval` must be true.
 - `output_slide_pptx` and `preview_path` are required before final export.
 
