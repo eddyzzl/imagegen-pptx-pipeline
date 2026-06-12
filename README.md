@@ -146,6 +146,7 @@ tools/sync-to-codex.sh --codex-home /path/to/.codex
 - For image-to-editable-slide work, `native_trace_hybrid` is the default: the source image becomes a coordinate reference, while major cards, text, arrows, icons, charts, and connectors are rebuilt as native PPT elements and verified by render/fix loops.
 - PPTX reconstruction must not downgrade rich comps into generic tables or card grids.
 - Final decks must pass at least 9 render/compare/fix rounds against the approved normalized comps.
-- Final decks must pass `scripts/audit_pptx_reconstruction.py`, which rejects image-only or image-dominant PPTX output.
+- Final decks must pass `scripts/audit_pptx_reconstruction.py`, which rejects image-only, image-dominant, or non-native-trace PPTX output.
+- Final decks must also pass `scripts/audit_visual_fidelity.py`, which rejects native-heavy rebuilds that no longer visually resemble the approved slide comps. The PASS report must include sha256 bindings for the current source comparison summary and current output PPTX.
 - Reconstruction-only uses page-sharded modules: `slide-modules/slide-XXX.pptx` is reviewed before merging into the final deck.
 - Every user pause is stateful through `pipeline_state.json`.

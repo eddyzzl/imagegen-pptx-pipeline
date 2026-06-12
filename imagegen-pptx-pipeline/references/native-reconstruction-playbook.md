@@ -33,7 +33,7 @@ Use this playbook whenever converting a final slide image into editable PPTX. Th
 6. Rebuild simple icons natively when practical. Otherwise place processed transparent PNG icon assets at matching coordinates.
 7. Rebuild connectors, arrows, loops, radial lines, and chart primitives as native shapes whenever possible.
 8. Add retained image fragments only after recording them in the slide QA note.
-9. Render, compare, repair, and repeat until the slide passes both visual fidelity and native density gates.
+9. Render, compare, repair, and repeat until the slide passes both visual fidelity and native density gates. A native-heavy slide that visually diverges from the comp still fails.
 
 ## Icon Asset Method
 
@@ -61,6 +61,22 @@ The gate defaults are intentionally conservative:
 
 These are minimums, not a quality target. Rich slides often need far more native objects.
 
+## Visual Fidelity Gate
+
+Native density does not prove visual reconstruction. After rendering the PPTX, compare each preview against the approved comp and run:
+
+```bash
+python scripts/audit_visual_fidelity.py \
+  --summary qa/manual-visual-diff/visual_diff_summary.json \
+  --policy visual_contract.json \
+  --output-pptx output/<deck>.pptx \
+  --report qa/pptx-visual-fidelity-audit.json
+```
+
+The report must be `PASS` before final export. If the rendered PPTX changes the proof-object shape, removes dense diagram structure, shifts page chrome, collapses the page into generic cards/tables, or reads as a different visual system, iterate or block even if `audit_pptx_reconstruction.py` passes.
+
+For multi-style output, audit every produced style lane. A passing audit for one selected lane cannot certify sibling PPTX files.
+
 ## Implementation Notes
 
 - Prefer a small local slide-building helper layer with functions for rounded rectangles, circles, lines, arrows, text boxes, icon placement, and freeform paths.
@@ -77,11 +93,17 @@ After building PPTX:
 2. Compare rendered preview against the approved comp.
 3. Fix title wrapping, overflow, missing text, icon clipping, wrong card gaps, wrong page chrome, and geometry drift.
 4. Run at least 9 recorded render/compare/fix rounds for the final output style.
-5. Run:
+5. Run native reconstruction audit:
 
 ```bash
 python scripts/audit_pptx_reconstruction.py --pptx output/<deck>.pptx --visual-contract visual_contract.json --report qa/pptx-reconstruction-audit.json
 ```
 
 The report must be `PASS` before final export.
+6. Run visual fidelity audit:
 
+```bash
+python scripts/audit_visual_fidelity.py --summary qa/manual-visual-diff/visual_diff_summary.json --policy visual_contract.json --output-pptx output/<deck>.pptx --report qa/pptx-visual-fidelity-audit.json
+```
+
+The report must also be `PASS` before final export and must bind to the current output PPTX by path and sha256. For multi-style output, pass `--output-pptx` once per final PPTX.

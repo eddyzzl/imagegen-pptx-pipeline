@@ -388,6 +388,7 @@ Hard requirements:
 20. Before placing retained icon images, crop and process icons through `scripts/prepare_icon_assets.py --strict`. Insert only transparent PNGs with padding and no clipped colored pixels.
 21. After building the slide/deck, run render/compare/fix loops and record them in `qa/render-fix/render_fix_rounds.json`. Do not finalize the deck until at least 9 rounds are completed with no unresolved P0/P1 findings.
 22. Run `scripts/audit_pptx_reconstruction.py --pptx <output.pptx> --visual-contract <visual_contract.json> --report <qa/pptx-reconstruction-audit.json>` and do not finalize unless it returns PASS.
+23. Run `scripts/audit_visual_fidelity.py --summary <qa/manual-visual-diff/visual_diff_summary.json> --policy <visual_contract.json> --output-pptx <output.pptx> --report <qa/pptx-visual-fidelity-audit.json>` and do not finalize unless it returns PASS with source/PPTX sha256 binding to the current files. A native-heavy PPTX that visually diverges from the comp is still a failed reconstruction.
 
 Output:
 - one editable PPTX or slide module as required by the Presentations workflow

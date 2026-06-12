@@ -426,6 +426,28 @@ def safe_int(value) -> int:
         return 0
 
 
+def safe_float(value) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def file_sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return "sha256:" + digest.hexdigest()
+
+
+def display_path(workspace: Path, path: Path) -> str:
+    try:
+        return str(path.relative_to(workspace))
+    except ValueError:
+        return str(path)
+
+
 def check_image_quality_policy(policy, failures: list[str], owner: str) -> dict:
     if not isinstance(policy, dict) or not policy:
         failures.append(f"{owner} image_quality_policy is missing")
@@ -1215,6 +1237,246 @@ def check_native_reconstruction_policy(visual_contract: dict, failures: list[str
     return policy
 
 
+def check_visual_fidelity_policy(visual_contract: dict, failures: list[str]) -> dict:
+    policy = visual_contract.get("pptx_visual_fidelity_policy") or {}
+    if not isinstance(policy, dict) or not policy:
+        failures.append("visual_contract.json pptx_visual_fidelity_policy is missing")
+        return {}
+    if policy.get("enabled") is not True:
+        failures.append("visual_contract.json pptx_visual_fidelity_policy.enabled must be true")
+    if policy.get("audit_script") != "scripts/audit_visual_fidelity.py":
+        failures.append(
+            "visual_contract.json pptx_visual_fidelity_policy.audit_script must be scripts/audit_visual_fidelity.py"
+        )
+    if not policy.get("report_path"):
+        failures.append("visual_contract.json pptx_visual_fidelity_policy.report_path is missing")
+    if not policy.get("summary_fallback_path"):
+        failures.append("visual_contract.json pptx_visual_fidelity_policy.summary_fallback_path is missing")
+    elif policy.get("forbid_pixel_locked_summary_sources", True) is not False and "pixel-locked" in str(
+        policy.get("summary_fallback_path")
+    ).lower():
+        failures.append(
+            "visual_contract.json pptx_visual_fidelity_policy.summary_fallback_path cannot point to a pixel-locked source"
+        )
+    if policy.get("require_all_output_lanes_pass") is not True:
+        failures.append("visual_contract.json pptx_visual_fidelity_policy.require_all_output_lanes_pass must be true")
+    if policy.get("require_report_source_sha256") is not True:
+        failures.append("visual_contract.json pptx_visual_fidelity_policy.require_report_source_sha256 must be true")
+    if policy.get("require_output_pptx_sha256") is not True:
+        failures.append("visual_contract.json pptx_visual_fidelity_policy.require_output_pptx_sha256 must be true")
+    if policy.get("forbid_pixel_locked_summary_sources") is not True:
+        failures.append("visual_contract.json pptx_visual_fidelity_policy.forbid_pixel_locked_summary_sources must be true")
+    minimums = {
+        "max_avg_mean_abs": 14.0,
+        "max_slide_mean_abs": 20.0,
+        "max_avg_pixel_diff_pct_over_24": 8.0,
+        "max_slide_pixel_diff_pct_over_24": 12.0,
+    }
+    for key, default in minimums.items():
+        value = safe_float(policy.get(key))
+        if value <= 0:
+            failures.append(f"visual_contract.json pptx_visual_fidelity_policy.{key} is missing")
+        elif value > default:
+            failures.append(
+                f"visual_contract.json pptx_visual_fidelity_policy.{key} must be <= {default:g}; got {value:g}"
+            )
+    return policy
+
+
+def visual_fidelity_entries(payload: dict) -> list[dict]:
+    if isinstance(payload.get("outputs"), list):
+        return payload["outputs"]
+    if isinstance(payload.get("summary"), list):
+        return payload["summary"]
+    if isinstance(payload.get("lanes"), list):
+        return payload["lanes"]
+    if "lane" in payload or "avg_mean_abs" in payload or "slides" in payload:
+        return [payload]
+    return []
+
+
+def derived_visual_metrics(entry: dict) -> dict:
+    result = dict(entry)
+    slides = result.get("slides")
+    if isinstance(slides, list) and slides:
+        mean_values = [safe_float(slide.get("mean_abs")) for slide in slides if isinstance(slide, dict)]
+        diff_values = [
+            safe_float(slide.get("pixel_diff_pct_over_24"))
+            for slide in slides
+            if isinstance(slide, dict)
+        ]
+        if mean_values:
+            result.setdefault("avg_mean_abs", sum(mean_values) / len(mean_values))
+            result.setdefault("max_mean_abs", max(mean_values))
+        if diff_values:
+            result.setdefault("avg_pixel_diff_pct_over_24", sum(diff_values) / len(diff_values))
+            result.setdefault("max_pixel_diff_pct_over_24", max(diff_values))
+    return result
+
+
+def output_records_by_path(workspace: Path, payload: dict) -> dict[str, dict]:
+    records = payload.get("output_pptx") or payload.get("output_pptx_paths") or []
+    if isinstance(records, str):
+        records = [{"path": records}]
+    result: dict[str, dict] = {}
+    if not isinstance(records, list):
+        return result
+    for item in records:
+        if isinstance(item, str):
+            item = {"path": item}
+        if not isinstance(item, dict):
+            continue
+        path_value = item.get("path") or item.get("pptx_path") or item.get("file")
+        if not path_value:
+            continue
+        path = resolve_path(workspace, path_value)
+        if path:
+            result[str(path.resolve())] = item
+    return result
+
+
+def check_visual_fidelity_report_binding(
+    workspace: Path,
+    report_payload: dict,
+    expected_summary_path: Path | None,
+    output_pptx: list[Path],
+    report_label: str,
+    failures: list[str],
+) -> None:
+    source_path_value = report_payload.get("source_summary_path") or report_payload.get("summary_source_path")
+    source_sha = report_payload.get("source_summary_sha256") or report_payload.get("summary_source_sha256")
+    source_path = None
+    if not source_path_value:
+        failures.append(f"{report_label} missing source_summary_path; stale visual PASS reports are forbidden")
+    else:
+        source_path = resolve_path(workspace, source_path_value)
+        if source_path is None or not source_path.exists():
+            failures.append(f"{report_label} source_summary_path does not exist: {source_path_value}")
+        else:
+            if expected_summary_path and source_path.resolve() != expected_summary_path.resolve():
+                failures.append(
+                    f"{report_label} source_summary_path must be {display_path(workspace, expected_summary_path)}, "
+                    f"got {display_path(workspace, source_path)}"
+                )
+            if "pixel-locked" in display_path(workspace, source_path).lower():
+                failures.append(f"{report_label} source_summary_path cannot come from a pixel-locked QA directory")
+            if not source_sha:
+                failures.append(f"{report_label} missing source_summary_sha256")
+            elif source_sha != file_sha256(source_path):
+                failures.append(f"{report_label} source_summary_sha256 does not match current summary file")
+
+    records = output_records_by_path(workspace, report_payload)
+    if output_pptx and not records:
+        failures.append(f"{report_label} missing output_pptx records with sha256")
+        return
+    for pptx_path in output_pptx:
+        resolved = str(pptx_path.resolve())
+        record = records.get(resolved)
+        if not record:
+            failures.append(f"{report_label} does not cover current output PPTX: {display_path(workspace, pptx_path)}")
+            continue
+        expected_sha = file_sha256(pptx_path)
+        if not record.get("sha256"):
+            failures.append(f"{report_label} output record missing sha256 for {display_path(workspace, pptx_path)}")
+        elif record.get("sha256") != expected_sha:
+            failures.append(f"{report_label} output sha256 is stale for {display_path(workspace, pptx_path)}")
+
+
+def check_visual_summary_metrics(
+    payload: dict,
+    label: str,
+    policy: dict,
+    failures: list[str],
+) -> None:
+    entries = visual_fidelity_entries(payload)
+    if not entries:
+        failures.append(f"{label} contains no visual fidelity output entries")
+        return
+    thresholds = {
+        "avg_mean_abs": ("max_avg_mean_abs", safe_float(policy.get("max_avg_mean_abs")) or 14.0),
+        "max_mean_abs": ("max_slide_mean_abs", safe_float(policy.get("max_slide_mean_abs")) or 20.0),
+        "avg_pixel_diff_pct_over_24": (
+            "max_avg_pixel_diff_pct_over_24",
+            safe_float(policy.get("max_avg_pixel_diff_pct_over_24")) or 8.0,
+        ),
+        "max_pixel_diff_pct_over_24": (
+            "max_slide_pixel_diff_pct_over_24",
+            safe_float(policy.get("max_slide_pixel_diff_pct_over_24")) or 12.0,
+        ),
+    }
+    for index, raw_entry in enumerate(entries, 1):
+        entry = derived_visual_metrics(raw_entry)
+        lane = entry.get("lane") or entry.get("style_lane_id") or entry.get("output_id") or f"entry-{index}"
+        if entry.get("status") == "FAIL":
+            failures.append(f"{label} {lane} status must be PASS")
+        for metric_key, (threshold_key, threshold) in thresholds.items():
+            value = safe_float(entry.get(metric_key))
+            if value > threshold:
+                failures.append(
+                    f"{label} {lane} {metric_key} {value:.2f} exceeds "
+                    f"{threshold_key} {threshold:.2f}"
+                )
+
+
+def check_active_manual_visual_diff(
+    workspace: Path,
+    policy: dict,
+    failures: list[str],
+) -> None:
+    active_path = resolve_path(
+        workspace,
+        policy.get("active_manual_visual_diff_summary_path") or "qa/manual-visual-diff/visual_diff_summary.json",
+    )
+    if not active_path or not active_path.exists():
+        return
+    payload = load_json(active_path, failures)
+    check_visual_summary_metrics(payload, str(active_path.relative_to(workspace)), policy, failures)
+
+
+def check_visual_fidelity_report(workspace: Path, visual_contract: dict, output_pptx: list[Path], failures: list[str]) -> None:
+    policy = visual_contract.get("pptx_visual_fidelity_policy") or {}
+    if not isinstance(policy, dict) or policy.get("enabled") is not True:
+        return
+    report_path = resolve_path(workspace, policy.get("report_path"))
+    fallback_path = resolve_path(workspace, policy.get("summary_fallback_path") or "qa/manual-visual-diff/visual_diff_summary.json")
+    report_payload = None
+    report_label = ""
+    if report_path and report_path.exists():
+        report_payload = load_json(report_path, failures)
+        report_label = str(report_path.relative_to(workspace))
+    elif fallback_path and fallback_path.exists():
+        report_payload = load_json(fallback_path, failures)
+        report_label = str(fallback_path.relative_to(workspace))
+    else:
+        failures.append(
+            "Missing PPTX visual fidelity audit report; expected "
+            f"{policy.get('report_path') or 'qa/pptx-visual-fidelity-audit.json'} or "
+            f"{policy.get('summary_fallback_path') or 'qa/manual-visual-diff/visual_diff_summary.json'}"
+        )
+        return
+
+    if report_payload.get("status") == "FAIL":
+        failures.append(f"{report_label} status must be PASS")
+    check_visual_fidelity_report_binding(
+        workspace,
+        report_payload,
+        fallback_path if fallback_path and fallback_path.exists() else None,
+        output_pptx,
+        report_label,
+        failures,
+    )
+    entries = visual_fidelity_entries(report_payload)
+    if not entries:
+        failures.append(f"{report_label} contains no visual fidelity output entries")
+        return
+    if len(output_pptx) > 1 and len(entries) < len(output_pptx):
+        failures.append(
+            f"{report_label} covers {len(entries)} output lanes but output/ contains {len(output_pptx)} PPTX files"
+        )
+    check_visual_summary_metrics(report_payload, report_label, policy, failures)
+    check_active_manual_visual_diff(workspace, policy, failures)
+
+
 def check_visual_contract(workspace: Path, deck_spec: dict, visual_contract: dict, failures: list[str]) -> None:
     expected_count = deck_spec.get("deck", {}).get("slide_count") or len(deck_spec.get("slides", []))
     slides = visual_contract.get("slides", [])
@@ -1239,6 +1501,7 @@ def check_visual_contract(workspace: Path, deck_spec: dict, visual_contract: dic
     check_icon_asset_policy(workspace, visual_contract, failures)
     check_render_fix_loop_policy(visual_contract, failures)
     native_policy = check_native_reconstruction_policy(visual_contract, failures)
+    check_visual_fidelity_policy(visual_contract, failures)
     check_no_html_surrogates(workspace, failures)
     selected_styles = [
         str(item)
@@ -1664,6 +1927,18 @@ def check_final(workspace: Path, visual_contract: dict, failures: list[str]) -> 
                 failures.append("PPTX native reconstruction audit report has no native elements")
             if safe_int(summary.get("total_editable_text_shapes")) <= 0:
                 failures.append("PPTX native reconstruction audit report has no editable text shapes")
+        if len(output_pptx) > 1:
+            per_output_reports = sorted((workspace / "qa" / "pptx-audit").glob("*.json"))
+            if len(per_output_reports) < len(output_pptx):
+                failures.append(
+                    f"qa/pptx-audit contains {len(per_output_reports)} reports but output/ contains {len(output_pptx)} PPTX files"
+                )
+            for per_report in per_output_reports:
+                payload = load_json(per_report, failures)
+                if payload.get("status") != "PASS":
+                    failures.append(f"{per_report.relative_to(workspace)} status must be PASS")
+    if output_pptx:
+        check_visual_fidelity_report(workspace, visual_contract, output_pptx, failures)
     loop = visual_contract.get("pptx_render_fix_loop") or {}
     minimum_rounds = safe_int(loop.get("minimum_rounds")) or 0
     if minimum_rounds:

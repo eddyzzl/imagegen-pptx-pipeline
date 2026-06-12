@@ -228,6 +228,28 @@ DEFAULT_PPTX_NATIVE_RECONSTRUCTION_POLICY = {
     ),
 }
 
+DEFAULT_PPTX_VISUAL_FIDELITY_POLICY = {
+    "enabled": True,
+    "audit_script": "scripts/audit_visual_fidelity.py",
+    "report_path": "qa/pptx-visual-fidelity-audit.json",
+    "summary_fallback_path": "qa/manual-visual-diff/visual_diff_summary.json",
+    "active_manual_visual_diff_summary_path": "qa/manual-visual-diff/visual_diff_summary.json",
+    "require_all_output_lanes_pass": True,
+    "require_report_source_sha256": True,
+    "require_output_pptx_sha256": True,
+    "forbid_pixel_locked_summary_sources": True,
+    "compare_against": "approved 4K normalized comps, not contact sheets or PPTX previews",
+    "max_avg_mean_abs": 14.0,
+    "max_slide_mean_abs": 20.0,
+    "max_avg_pixel_diff_pct_over_24": 8.0,
+    "max_slide_pixel_diff_pct_over_24": 12.0,
+    "notes": (
+        "Native editability is only a necessary condition. Final rendered PPTX previews must also "
+        "stay visually close to the approved comps; a native rebuild that collapses diagrams, density, "
+        "or page structure fails even if it contains many editable elements."
+    ),
+}
+
 
 def slugify(value: str) -> str:
     value = value.strip().lower()
@@ -618,6 +640,7 @@ def main() -> int:
         "icon_asset_policy": DEFAULT_ICON_ASSET_POLICY,
         "pptx_render_fix_loop": DEFAULT_PPTX_RENDER_FIX_LOOP,
         "pptx_native_reconstruction_policy": DEFAULT_PPTX_NATIVE_RECONSTRUCTION_POLICY,
+        "pptx_visual_fidelity_policy": DEFAULT_PPTX_VISUAL_FIDELITY_POLICY,
         "slides": [],
     }
     reconstruction_manifest = {

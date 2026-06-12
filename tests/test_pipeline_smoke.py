@@ -19,6 +19,7 @@ COMP_ASSET_SCRIPT = SKILL_DIR / "scripts" / "check_imagegen_comp_asset.py"
 NORMALIZE_SCRIPT = SKILL_DIR / "scripts" / "normalize_slide_comp.py"
 ICON_SCRIPT = SKILL_DIR / "scripts" / "prepare_icon_assets.py"
 AUDIT_SCRIPT = SKILL_DIR / "scripts" / "audit_pptx_reconstruction.py"
+AUDIT_VISUAL_SCRIPT = SKILL_DIR / "scripts" / "audit_visual_fidelity.py"
 
 
 def load_gate_module():
@@ -161,6 +162,7 @@ def visual_contract_generation_defaults() -> dict:
             "block_on_unresolved_p0_p1": True,
         },
         "pptx_native_reconstruction_policy": native_reconstruction_policy(),
+        "pptx_visual_fidelity_policy": visual_fidelity_policy(),
         "default_reconstruction_mode": "native_trace_hybrid",
         "native_trace_hybrid_required": True,
         "pixel_locked_hybrid_required": False,
@@ -188,6 +190,24 @@ def native_reconstruction_policy() -> dict:
             "minimum_visible_text_shapes": 2,
             "minimum_editable_text_chars": 10,
         },
+    }
+
+
+def visual_fidelity_policy() -> dict:
+    return {
+        "enabled": True,
+        "audit_script": "scripts/audit_visual_fidelity.py",
+        "report_path": "qa/pptx-visual-fidelity-audit.json",
+        "summary_fallback_path": "qa/manual-visual-diff/visual_diff_summary.json",
+        "active_manual_visual_diff_summary_path": "qa/manual-visual-diff/visual_diff_summary.json",
+        "require_all_output_lanes_pass": True,
+        "require_report_source_sha256": True,
+        "require_output_pptx_sha256": True,
+        "forbid_pixel_locked_summary_sources": True,
+        "max_avg_mean_abs": 14.0,
+        "max_slide_mean_abs": 20.0,
+        "max_avg_pixel_diff_pct_over_24": 8.0,
+        "max_slide_pixel_diff_pct_over_24": 12.0,
     }
 
 
@@ -563,6 +583,186 @@ class PipelineSmokeTests(unittest.TestCase):
             self.assertEqual(payload["status"], "PASS")
             self.assertGreaterEqual(payload["summary"]["total_native_elements"], 35)
             self.assertGreaterEqual(payload["summary"]["total_editable_text_shapes"], 8)
+
+    def test_pptx_reconstruction_audit_rejects_pixel_locked_contract(self) -> None:
+        from pptx import Presentation
+        from pptx.enum.shapes import MSO_SHAPE
+        from pptx.util import Inches
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            pptx_path = tmp_path / "native-enough-but-wrong-contract.pptx"
+            prs = Presentation()
+            prs.slide_width = Inches(13.333333)
+            prs.slide_height = Inches(7.5)
+            slide = prs.slides.add_slide(prs.slide_layouts[6])
+            for idx in range(12):
+                shape = slide.shapes.add_shape(
+                    MSO_SHAPE.RECTANGLE,
+                    Inches(0.5 + (idx % 4) * 2.8),
+                    Inches(0.7 + (idx // 4) * 1.0),
+                    Inches(2.2),
+                    Inches(0.55),
+                )
+                shape.text = f"Editable block {idx}"
+            prs.save(pptx_path)
+            contract = tmp_path / "visual_contract.json"
+            contract.write_text(
+                json.dumps(
+                    {
+                        "pptx_native_reconstruction_policy": native_reconstruction_policy(),
+                        "slides": [
+                            {
+                                "slide_id": "slide-001",
+                                "reconstruction_mode": "pixel_locked_hybrid",
+                            }
+                        ],
+                    },
+                    ensure_ascii=False,
+                    indent=2,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    str(AUDIT_SCRIPT),
+                    "--pptx",
+                    str(pptx_path),
+                    "--visual-contract",
+                    str(contract),
+                ],
+                check=False,
+                text=True,
+                capture_output=True,
+            )
+            self.assertEqual(completed.returncode, 1)
+            payload = json.loads(completed.stdout)
+            self.assertEqual(payload["status"], "FAIL")
+            self.assertTrue(any("reconstruction_mode must be native_trace_hybrid" in item for item in payload["failures"]))
+
+    def test_visual_fidelity_audit_rejects_large_render_drift(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            summary = Path(tmp) / "visual_diff_summary.json"
+            summary.write_text(
+                json.dumps(
+                    {
+                        "summary": [
+                            {
+                                "lane": "lane-annual-print",
+                                "avg_mean_abs": 29.33,
+                                "max_mean_abs": 34.97,
+                                "avg_pixel_diff_pct_over_24": 19.21,
+                                "max_pixel_diff_pct_over_24": 23.68,
+                            }
+                        ]
+                    },
+                    ensure_ascii=False,
+                    indent=2,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            completed = subprocess.run(
+                [sys.executable, str(AUDIT_VISUAL_SCRIPT), "--summary", str(summary)],
+                check=False,
+                text=True,
+                capture_output=True,
+            )
+            self.assertEqual(completed.returncode, 1)
+            payload = json.loads(completed.stdout)
+            self.assertEqual(payload["status"], "FAIL")
+            self.assertTrue(any("lane-annual-print" in item for item in payload["failures"]))
+
+    def test_visual_fidelity_audit_records_current_pptx_binding(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            summary = tmp_path / "visual_diff_summary.json"
+            pptx = tmp_path / "output.pptx"
+            report = tmp_path / "audit.json"
+            pptx.write_bytes(b"fake pptx bytes")
+            summary.write_text(
+                json.dumps(
+                    {
+                        "summary": [
+                            {
+                                "lane": "lane-annual-print",
+                                "avg_mean_abs": 3.0,
+                                "max_mean_abs": 4.0,
+                                "avg_pixel_diff_pct_over_24": 2.0,
+                                "max_pixel_diff_pct_over_24": 3.0,
+                            }
+                        ]
+                    },
+                    ensure_ascii=False,
+                    indent=2,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    str(AUDIT_VISUAL_SCRIPT),
+                    "--summary",
+                    str(summary),
+                    "--output-pptx",
+                    str(pptx),
+                    "--report",
+                    str(report),
+                ],
+                check=False,
+                text=True,
+                capture_output=True,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+            payload = json.loads(report.read_text(encoding="utf-8"))
+            self.assertEqual(payload["status"], "PASS")
+            self.assertEqual(payload["source_summary_path"], str(summary.resolve()))
+            self.assertTrue(payload["source_summary_sha256"].startswith("sha256:"))
+            self.assertEqual(payload["output_pptx"][0]["path"], str(pptx.resolve()))
+            self.assertTrue(payload["output_pptx"][0]["sha256"].startswith("sha256:"))
+
+    def test_visual_fidelity_gate_rejects_unbound_pass_report(self) -> None:
+        gate_module = load_gate_module()
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp)
+            (workspace / "qa").mkdir()
+            (workspace / "output").mkdir()
+            pptx = workspace / "output" / "deck.pptx"
+            pptx.write_bytes(b"current output pptx")
+            (workspace / "qa" / "pptx-visual-fidelity-audit.json").write_text(
+                json.dumps(
+                    {
+                        "status": "PASS",
+                        "outputs": [
+                            {
+                                "lane": "lane-annual-print",
+                                "status": "PASS",
+                                "avg_mean_abs": 3.0,
+                                "max_mean_abs": 4.0,
+                                "avg_pixel_diff_pct_over_24": 2.0,
+                                "max_pixel_diff_pct_over_24": 3.0,
+                            }
+                        ],
+                        "failures": [],
+                    },
+                    ensure_ascii=False,
+                    indent=2,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            failures: list[str] = []
+            gate_module.check_visual_fidelity_report(
+                workspace,
+                {"pptx_visual_fidelity_policy": visual_fidelity_policy()},
+                [pptx],
+                failures,
+            )
+            self.assertTrue(any("missing source_summary_path" in item for item in failures))
+            self.assertTrue(any("missing output_pptx records" in item for item in failures))
 
     def test_init_workspace_creates_slide_intent_artifacts(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

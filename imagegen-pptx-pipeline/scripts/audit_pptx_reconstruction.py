@@ -170,6 +170,56 @@ def analyze_slide(
     }
 
 
+def accepted_native_trace_exception(slide: dict) -> bool:
+    exception = slide.get("native_trace_exception") or {}
+    return (
+        slide.get("explicit_downgrade_accepted") is True
+        or exception.get("user_accepted_risk") is True
+        or exception.get("explicit_downgrade_accepted") is True
+    )
+
+
+def visual_contract_failures(visual_contract: dict, slide_count: int, policy: dict) -> list[str]:
+    slides = visual_contract.get("slides") if isinstance(visual_contract, dict) else None
+    if not isinstance(slides, list) or not slides:
+        return []
+
+    failures: list[str] = []
+    require_native = policy.get("require_native_trace_hybrid_by_default") is not False
+    if len(slides) != slide_count:
+        failures.append(
+            f"visual_contract slide count {len(slides)} does not match PPTX slide count {slide_count}"
+        )
+
+    for idx, slide in enumerate(slides[:slide_count], 1):
+        if not isinstance(slide, dict):
+            failures.append(f"visual_contract slide {idx:03d} is not an object")
+            continue
+        mode = slide.get("reconstruction_mode") or visual_contract.get("default_reconstruction_mode")
+        if require_native and mode != "native_trace_hybrid" and not accepted_native_trace_exception(slide):
+            failures.append(
+                f"visual_contract slide {idx:03d} reconstruction_mode must be native_trace_hybrid; got {mode!r}"
+            )
+        trace_plan = slide.get("native_trace_plan") or {}
+        if require_native and not accepted_native_trace_exception(slide):
+            if not isinstance(trace_plan, dict) or not trace_plan:
+                failures.append(f"visual_contract slide {idx:03d} missing native_trace_plan")
+            else:
+                if trace_plan.get("source_image_used_as_coordinate_blueprint") is not True:
+                    failures.append(
+                        f"visual_contract slide {idx:03d} native_trace_plan must mark the source image as coordinate blueprint"
+                    )
+                if trace_plan.get("source_image_not_retained_as_full_slide_layer") is not True:
+                    failures.append(
+                        f"visual_contract slide {idx:03d} native_trace_plan must forbid retaining the source image as a full-slide layer"
+                    )
+                if trace_plan.get("pixel_to_inch_mapping_recorded") is not True:
+                    failures.append(
+                        f"visual_contract slide {idx:03d} native_trace_plan must record pixel-to-inch mapping"
+                    )
+    return failures
+
+
 def audit_pptx(pptx_path: Path, visual_contract: dict | None = None) -> dict:
     if not pptx_path.exists():
         raise FileNotFoundError(f"PPTX does not exist: {pptx_path}")
@@ -209,6 +259,7 @@ def audit_pptx(pptx_path: Path, visual_contract: dict | None = None) -> dict:
         for slide in slides
         for failure in slide["failures"]
     ]
+    failures.extend(visual_contract_failures(visual_contract, len(slides), policy))
     summary = {
         "slide_count": len(slides),
         "total_native_elements": sum(slide["native_elements"] for slide in slides),

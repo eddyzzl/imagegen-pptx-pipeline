@@ -1045,6 +1045,22 @@ Use after ImageGen style selection and single-slide comps, before PPTX authoring
       "minimum_editable_text_chars": 10
     }
   },
+  "pptx_visual_fidelity_policy": {
+    "enabled": true,
+    "audit_script": "scripts/audit_visual_fidelity.py",
+    "report_path": "qa/pptx-visual-fidelity-audit.json",
+    "summary_fallback_path": "qa/manual-visual-diff/visual_diff_summary.json",
+    "active_manual_visual_diff_summary_path": "qa/manual-visual-diff/visual_diff_summary.json",
+    "require_all_output_lanes_pass": true,
+    "require_report_source_sha256": true,
+    "require_output_pptx_sha256": true,
+    "forbid_pixel_locked_summary_sources": true,
+    "compare_against": "approved 4K normalized comps, not contact sheets or PPTX previews",
+    "max_avg_mean_abs": 14.0,
+    "max_slide_mean_abs": 20.0,
+    "max_avg_pixel_diff_pct_over_24": 8.0,
+    "max_slide_pixel_diff_pct_over_24": 12.0
+  },
   "slides": [
     {
       "slide_id": "slide-001",
@@ -1204,6 +1220,9 @@ Rules:
 - `icon_asset_policy` requires transparent padded PNG icon assets before PPTX reconstruction. Processed icons may be retained image layers, but they must not be clipped or pasted with unwanted white backgrounds.
 - `pptx_render_fix_loop.minimum_rounds` must be at least 9 and its rounds log must be complete before final export.
 - `pptx_native_reconstruction_policy` requires `scripts/audit_pptx_reconstruction.py` and a PASS report at `qa/pptx-reconstruction-audit.json` before final export.
+- `pptx_visual_fidelity_policy` requires `scripts/audit_visual_fidelity.py` and a PASS report at `qa/pptx-visual-fidelity-audit.json` before final export. A native-heavy PPTX that visibly diverges from approved comps fails.
+- The visual-fidelity PASS report must bind to the current source summary and current output PPTX via sha256. Stale PASS reports and pixel-locked QA summaries cannot certify native editable reconstruction.
+- In multi-style output, every produced style lane must be covered by visual-fidelity audit; one passing lane cannot certify all sibling output decks.
 - If `downgrade_mode` is true, `user_decisions.md` must explain that the user accepted a style-inspired rebuild rather than comp-faithful reconstruction. Do not infer this from automation mode.
 - The final council must compare PPTX previews against this file.
 
@@ -1272,6 +1291,48 @@ Rules:
 - `completed_rounds` must be at least `visual_contract.json.pptx_render_fix_loop.minimum_rounds`.
 - Each round must render the PPTX or slide modules to PNG and compare against approved normalized 4K comps.
 - Do not set `status="completed"` while `unresolved_p0_p1` is non-empty.
+
+## pptx-visual-fidelity-audit.json
+
+Use after rendering final PPTX previews and before final export:
+
+```json
+{
+  "status": "PASS | FAIL",
+  "policy_ref": "visual_contract.json.pptx_visual_fidelity_policy",
+  "generated_at_utc": "2026-06-12T10:00:00+00:00",
+  "source_summary_path": "qa/manual-visual-diff/visual_diff_summary.json",
+  "source_summary_sha256": "sha256:<hash of current source summary>",
+  "output_pptx": [
+    {
+      "path": "output/deck-style-lane-A.pptx",
+      "sha256": "sha256:<hash of current PPTX>",
+      "bytes": 123456
+    }
+  ],
+  "outputs": [
+    {
+      "lane": "lane-annual-print",
+      "status": "PASS | FAIL",
+      "avg_mean_abs": 7.2,
+      "max_mean_abs": 11.5,
+      "avg_pixel_diff_pct_over_24": 4.1,
+      "max_pixel_diff_pct_over_24": 7.8,
+      "failures": []
+    }
+  ],
+  "failures": []
+}
+```
+
+Rules:
+
+- Generate this report with `scripts/audit_visual_fidelity.py`.
+- The source comparison must be approved normalized 4K per-slide comps, not raw ImageGen returns, contact sheets, style previews, or PPTX output screenshots.
+- If `output/` contains multiple style PPTX files, the report must include one entry per output style lane.
+- The report must include `source_summary_path`, `source_summary_sha256`, and `output_pptx[].sha256`; final gate rejects stale PASS reports whose hashes do not match the current files.
+- `source_summary_path` cannot come from a `pixel-locked` QA directory. Pixel-locked reports cannot certify native editable reconstruction.
+- If any lane exceeds threshold or visually collapses to a different layout family, final export is blocked.
 
 ## reconstruction_manifest.json
 

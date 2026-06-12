@@ -42,6 +42,7 @@ Default reconstruction mode is **native trace hybrid**, not whole-image backplat
 - **ImageGen retries fail closed:** ImageGen server errors, tool failures, timeout-like failures, or long-prompt failures are not permission to simplify the deck, reduce information density, switch to HTML/browser previews, or continue with ordinary PPT layouts. Retry prompts may remove transport noise and duplicated prose only; they must preserve locked slide order, titles, core claims, required data, proof-object intent, template constraints, visual density floor, and the assigned aesthetic family. After repeated failures, block and ask the user rather than marking an option ready.
 - **Images are iterated before PPTX:** subagents/reviewer roles review each single-slide comp. P0/P1 findings must trigger targeted ImageGen regeneration of that slide before PPTX authoring.
 - **PPTX is a native-trace reconstruction of the approved comp:** final slides must preserve the approved comp's appearance while rebuilding the reader-facing structure as native PPT elements. Full-slide image backplates are downgrade exceptions, not the default, and require explicit user acceptance or a documented unavoidable retained-image exception.
+- **Native density is not visual fidelity:** a PPTX with many editable shapes can still fail if it no longer resembles the approved comp. Final export requires both native reconstruction audit and visual fidelity audit. If rendered PPTX previews collapse rich comps into simplified cards, sparse tables, generic beige/white layouts, or different proof-object geometry, treat it as P0/P1 reconstruction failure even when all text is editable.
 - **Editable does not mean fully native:** complex diagrams, depth fields, textures, glow, glass, illustrations, screenshots, dense icons, and generated visual systems may remain image layers. Required editability applies to main titles, claims, body text, key numbers, labels, footers, and simple callouts unless a user-approved exception is documented.
 - **Visible editability is mandatory:** editable content must be visible and selectable in the final slide itself. Speaker notes, hidden layers, transparent text, off-slide text, or text covered by a full-slide image are useful references but fail the editability requirement.
 - **Reconstruction-only may skip planning, not fidelity:** when the user supplies final per-slide images, use `reconstruction-only` mode. Skip content/narrative/style generation, but still require per-slide image registration, exact text/OCR verification, visual contract, page-level reconstruction review, rendered previews, and final council.
@@ -709,6 +710,7 @@ Run at least 9 render/compare/fix rounds for each PPTX output style:
 - Record every round in `qa/render-fix/render_fix_rounds.json` with rendered preview paths, findings, fixes, and unresolved issues.
 - Do not finalize until `completed_rounds >= 9` and `unresolved_p0_p1` is empty.
 - Run `scripts/audit_pptx_reconstruction.py --pptx <output.pptx> --visual-contract <visual_contract.json> --report <workspace>/qa/pptx-reconstruction-audit.json`. Do not finalize unless the audit report status is `PASS`.
+- Run `scripts/audit_visual_fidelity.py --summary <workspace>/qa/manual-visual-diff/visual_diff_summary.json --policy <workspace>/visual_contract.json --output-pptx <workspace>/output/<deck>.pptx --report <workspace>/qa/pptx-visual-fidelity-audit.json`. Do not finalize unless the report status is `PASS` and its `source_summary_sha256` plus `output_pptx[].sha256` match the current files. For multiple selected style outputs, pass `--output-pptx` once per final PPTX and make every output lane pass; do not let a passing top-level `visual_contract.json` or stale QA report stand in for sibling style decks.
 
 ### 13. Final Deck Council Review And Export
 
@@ -746,6 +748,7 @@ Blocking QA:
 - PPTX previews pass reconstruction-fidelity review against the approved comp; logical correctness without visual reconstruction is not enough.
 - `qa/render-fix/render_fix_rounds.json` records at least 9 completed render/compare/fix rounds and no unresolved P0/P1 findings.
 - `qa/pptx-reconstruction-audit.json` is `PASS`; final slides are not image-only or image-dominant.
+- `qa/pptx-visual-fidelity-audit.json` is `PASS`; rendered PPTX previews remain visually close to approved comps, and every output style lane is covered by the audit.
 - Processed retained icons are transparent PNGs with padding and no clipped colored pixels.
 - Final PPTX preserves `visual_contract.json` archetypes; no unapproved collapse to table-only/card-only/default layouts.
 - Template-following decks pass source-template fidelity gates, preserve mapped template elements, and have no unapproved rebuild-from-blank slides.
