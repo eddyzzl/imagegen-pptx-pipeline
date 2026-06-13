@@ -8,6 +8,7 @@ import json
 import os
 import re
 import secrets
+import shutil
 from datetime import datetime
 from pathlib import Path
 
@@ -15,11 +16,11 @@ from pathlib import Path
 BUILT_IN_TASTE_SOURCE = {
     "name": "built-in-ppt-taste-system",
     "path": "references/taste-system.md",
-    "used_for": "style exploration | comp review | PPTX reconstruction QA | anti-default QA",
+    "used_for": "style exploration | comp review | PPTX conversion QA | anti-default QA",
     "constraints_used": [
         "avoid flat table-only decks when richer proof objects fit",
         "require profile-appropriate visual archetypes",
-        "preserve ImageGen comp visual grammar during PPTX reconstruction",
+        "preserve ImageGen comp visual grammar during strict PPTX conversion",
     ],
     "constraints_ignored": [],
 }
@@ -42,7 +43,7 @@ BUILT_IN_TASTE_RULES = [
     "Prefer crafted diagrams and focal objects over default boxes",
     "Use one dominant proof object per slide",
     "Keep template-following designs inside protected template frames",
-    "Do not let PPTX reconstruction collapse rich comps into plain tables or card grids",
+    "Do not let PPTX conversion collapse rich comps into plain tables or card grids",
 ]
 
 BUILT_IN_TASTE_ANTI_PATTERNS = [
@@ -112,7 +113,7 @@ DEFAULT_IMAGE_QUALITY_POLICY = {
     "small_text_policy": (
         "Avoid unreadable microtext in ImageGen comps. Main titles, key numbers, labels, "
         "and page markers must be sharp enough for visual review; exact final small copy "
-        "comes from deck_spec.json during PPTX reconstruction."
+        "comes from deck_spec.json during PPTX conversion."
     ),
     "blur_rejection_criteria": [
         "soft or blurry main title",
@@ -177,76 +178,81 @@ DEFAULT_COMP_STYLE_LOCK = {
     "generation_owner": "main_agent",
 }
 
-DEFAULT_ICON_ASSET_POLICY = {
+DEFAULT_STRICT_ICON_POLICY = {
     "enabled": True,
-    "manifest_path": "assets/icon-manifests/icon_asset_manifest.json",
-    "processor_script": "scripts/prepare_icon_assets.py",
+    "manifest_path": "icons/icon_jobs.json",
+    "extractor_script": "iconcut3.py",
     "transparent_png_required": True,
-    "minimum_transparent_padding_px": 16,
-    "crop_expansion_px": 12,
-    "minimum_output_icon_px": 256,
-    "forbid_edge_touching_colored_pixels": True,
-    "use_processed_icons_in_pptx": True,
+    "edge_audit_required": True,
+    "contact_sheet_audit_required": True,
+    "clip_error_fails_closed": True,
+    "no_manual_crop_fallback": True,
+    "source_icon_inventory_required": True,
+    "real_source_icons_must_be_extracted": True,
+    "native_redraw_for_named_pictograms_forbidden": True,
+    "glyph_helpers_are_placeholder_only": True,
+    "icon_hd_enhancement_required": True,
+    "icon_hd_target_min_px": 256,
+    "feathered_slices_preserve_alpha": True,
+    "minimum_output_icon_min_dim_px": 256,
+    "default_padding_px": 10,
+    "wide_asset_text_label_flag_aspect_gt": 2.5,
+    "allow_feathered_opaque_slices_for_inseparable_art": True,
     "notes": (
-        "Before PPTX reconstruction, crop simple reusable icons from approved comps, remove light "
-        "backgrounds, add transparent padding, and place processed icons back at the matching PPTX coordinates."
+        "Before PPTX conversion, inventory recognizable source pictograms and crop them with iconcut3.strict_cut3. "
+        "Strict line-art icons must be supersampled/sharpened before placement; feathered opaque slices must preserve their soft alpha. "
+        "A clean alpha edge is not enough; the contact sheet must also prove every asset is a pictogram and not a boxed text label. "
+        "slidelib glyph helpers are placeholder scaffolding only, not a fidelity path for named source icons."
     ),
 }
 
-DEFAULT_PPTX_RENDER_FIX_LOOP = {
+DEFAULT_RENDER_COMPARE_LOOP = {
     "enabled": True,
-    "minimum_rounds": 9,
-    "rounds_log_path": "qa/render-fix/render_fix_rounds.json",
-    "compare_against": "approved 4K normalized comps",
+    "minimum_rounds": 10,
+    "rounds_log_path": "qa/render-compare/render_compare_rounds.json",
+    "render_log_path": "qa/render-compare/render_log.json",
+    "compare_against": "approved slide image or generated comp",
+    "paired_crops_required": True,
+    "region_diff_normal_band_max_mean_abs": 35,
+    "region_diff_blocking_mean_abs": 40,
+    "markitdown_text_check_recommended": True,
     "block_on_unresolved_p0_p1": True,
+    "round_requires_new_export": True,
+    "qa_gate_script": "qa_gate.py",
+    "metrics_source": "qa_gate.py metrics",
+    "media_audit_required": True,
 }
 
-DEFAULT_PPTX_NATIVE_RECONSTRUCTION_POLICY = {
+DEFAULT_CONVERSION_POLICY = {
     "enabled": True,
-    "audit_script": "scripts/audit_pptx_reconstruction.py",
-    "report_path": "qa/pptx-reconstruction-audit.json",
-    "require_native_trace_hybrid_by_default": True,
-    "source_image_is_coordinate_blueprint": True,
-    "source_image_may_not_be_retained_as_full_slide_layer": True,
-    "allow_full_slide_backplate_by_default": False,
-    "max_full_slide_or_large_raster_images_per_slide": 0,
-    "full_slide_or_large_picture_area_ratio": 0.85,
-    "content_slide_thresholds": {
-        "minimum_native_elements": 35,
-        "minimum_visible_text_shapes": 8,
-        "minimum_editable_text_chars": 60,
-    },
-    "simple_slide_thresholds": {
-        "minimum_native_elements": 10,
-        "minimum_visible_text_shapes": 2,
-        "minimum_editable_text_chars": 10,
-    },
+    "method": "strict_slide_image_to_editable_pptx",
+    "builder_script": "slidelib.py",
+    "icon_extractor_script": "iconcut3.py",
+    "qa_gate_script": "qa_gate.py",
+    "pitfalls_reference": "PITFALLS.md",
+    "basis_px": {"width": 1920, "height": 1080},
+    "source_image_is_measurement_target": True,
+    "full_image_backgrounds_allowed": False,
+    "region_image_backgrounds_allowed": False,
+    "native_text_required": True,
+    "native_shapes_required": True,
+    "native_charts_tables_connectors_required": True,
+    "only_complex_art_may_be_images": True,
+    "multiline_text_split_required": True,
+    "automatic_text_wrap_for_multiline_forbidden": True,
+    "strict_icon_extraction_required": True,
+    "icon_contact_sheet_audit_required": True,
+    "real_source_icons_must_be_extracted": True,
+    "native_redraw_for_named_pictograms_forbidden": True,
+    "icon_hd_enhancement_required": True,
+    "minimum_render_compare_rounds": 10,
+    "render_round_requires_new_export": True,
+    "qa_gate_required": True,
+    "metrics_gate_reads_actual_render": True,
+    "media_audit_required": True,
     "notes": (
-        "The source comp is a coordinate blueprint. Rebuild main cards, text, connectors, "
-        "basic charts, page furniture, and simple diagrams as native PPT elements. Retain only "
-        "icons, photos, complex textures, and genuinely hard-to-rebuild art as cropped images."
-    ),
-}
-
-DEFAULT_PPTX_VISUAL_FIDELITY_POLICY = {
-    "enabled": True,
-    "audit_script": "scripts/audit_visual_fidelity.py",
-    "report_path": "qa/pptx-visual-fidelity-audit.json",
-    "summary_fallback_path": "qa/manual-visual-diff/visual_diff_summary.json",
-    "active_manual_visual_diff_summary_path": "qa/manual-visual-diff/visual_diff_summary.json",
-    "require_all_output_lanes_pass": True,
-    "require_report_source_sha256": True,
-    "require_output_pptx_sha256": True,
-    "forbid_pixel_locked_summary_sources": True,
-    "compare_against": "approved 4K normalized comps, not contact sheets or PPTX previews",
-    "max_avg_mean_abs": 14.0,
-    "max_slide_mean_abs": 20.0,
-    "max_avg_pixel_diff_pct_over_24": 8.0,
-    "max_slide_pixel_diff_pct_over_24": 12.0,
-    "notes": (
-        "Native editability is only a necessary condition. Final rendered PPTX previews must also "
-        "stay visually close to the approved comps; a native rebuild that collapses diagrams, density, "
-        "or page structure fails even if it contains many editable elements."
+        "Measure the approved slide image, extract icons strictly, build native PPTX with slidelib, "
+        "then render and compare until paired crops and region metrics converge."
     ),
 }
 
@@ -283,7 +289,10 @@ def main() -> int:
         "slides/raw",
         "assets",
         "assets/icons",
-        "assets/icon-manifests",
+        "icons",
+        "icon-sheets",
+        "measurements",
+        "crops",
         "preview",
         "styles",
         "layout",
@@ -297,13 +306,24 @@ def main() -> int:
         "qa/reviews/reconstruction-only",
         "qa/reviews/pptx-preview",
         "qa/reviews/final-council",
-        "qa/render-fix",
+        "qa/render-compare",
         "prompts",
         "slide-modules",
         "output",
     ]
     for name in dirs:
         (workspace / name).mkdir(parents=True, exist_ok=True)
+
+    skill_dir = Path(__file__).resolve().parents[1]
+    copied_tools: dict[str, bool] = {}
+    for filename in ("slidelib.py", "iconcut3.py", "qa_gate.py", "PITFALLS.md"):
+        source = skill_dir / filename
+        destination = workspace / filename
+        if source.exists():
+            shutil.copy2(source, destination)
+            copied_tools[filename] = destination.exists()
+        else:
+            copied_tools[filename] = False
 
     deck_spec = {
         "deck": {
@@ -361,6 +381,7 @@ def main() -> int:
             "style_brief": "style_brief.json",
             "selected_style": "",
             "visual_contract": "visual_contract.json",
+            "conversion_manifest": "conversion_manifest.json",
             "latest_preview": "",
         },
         "stage_history": [
@@ -546,7 +567,7 @@ def main() -> int:
                 {
                     "name": BUILT_IN_TASTE_SOURCE["name"],
                     "path": BUILT_IN_TASTE_SOURCE["path"],
-                    "used_for": "direction diversity, ImageGen art direction, anti-generic review, reconstruction fidelity",
+                    "used_for": "direction diversity, ImageGen art direction, anti-generic review, conversion fidelity",
                 },
                 {
                     "name": BUILT_IN_STYLE_LIBRARY_SOURCE["name"],
@@ -558,7 +579,7 @@ def main() -> int:
                 "each direction differs by visual aesthetic only: art style, material, depth, typography feel, icon/illustration style, chart rendering, composition rhythm, and density",
                 "style lanes must not rename or replace the selected narrative treatment, slide content, claim, data, or proof object",
                 "single-slide comps must preserve a clear visual archetype",
-                "PPTX reconstruction must retain the approved comp's reader-facing visual grammar",
+                "PPTX conversion must retain the approved comp's reader-facing visual grammar",
             ],
             "anti_patterns": BUILT_IN_TASTE_ANTI_PATTERNS,
             "profile_specific_direction_notes": [],
@@ -631,24 +652,30 @@ def main() -> int:
         },
         "downgrade_mode": False,
         "explicit_downgrade_accepted": False,
-        "comp_is_construction_drawing": True,
-        "default_reconstruction_mode": "native_trace_hybrid",
-        "native_trace_hybrid_required": True,
-        "pixel_locked_hybrid_required": False,
+        "comp_is_conversion_target": True,
+        "conversion_method": "strict_slide_image_to_editable_pptx",
         "minimum_non_title_rich_visual_ratio": 0.6,
         "image_quality_policy": DEFAULT_IMAGE_QUALITY_POLICY,
-        "icon_asset_policy": DEFAULT_ICON_ASSET_POLICY,
-        "pptx_render_fix_loop": DEFAULT_PPTX_RENDER_FIX_LOOP,
-        "pptx_native_reconstruction_policy": DEFAULT_PPTX_NATIVE_RECONSTRUCTION_POLICY,
-        "pptx_visual_fidelity_policy": DEFAULT_PPTX_VISUAL_FIDELITY_POLICY,
+        "conversion_policy": DEFAULT_CONVERSION_POLICY,
+        "strict_icon_policy": DEFAULT_STRICT_ICON_POLICY,
+        "render_compare_loop": DEFAULT_RENDER_COMPARE_LOOP,
         "slides": [],
     }
-    reconstruction_manifest = {
+    conversion_manifest = {
         "lock_state": "draft",
         "mode": args.mode,
-        "source": "user_supplied_slide_images",
+        "source": "user_supplied_slide_images" if args.mode in {"reconstruction-only", "repair-existing-pptx"} else "approved_imagegen_comps",
+        "conversion_method": "strict_slide_image_to_editable_pptx",
+        "tool_files": {
+            "slidelib": "slidelib.py",
+            "iconcut3": "iconcut3.py",
+            "qa_gate": "qa_gate.py",
+            "pitfalls": "PITFALLS.md",
+            "copied_to_workspace": copied_tools,
+        },
+        "basis_px": {"width": 1920, "height": 1080},
         "slide_count": 0,
-        "page_sharding": {
+        "page_modules": {
             "enabled": args.mode in {"reconstruction-only", "repair-existing-pptx"},
             "per_slide_pptx_required": True,
             "merge_after_page_approval": True,
@@ -656,38 +683,54 @@ def main() -> int:
         },
         "global_rules": {
             "skip_full_pipeline_gates": args.mode in {"reconstruction-only", "repair-existing-pptx"},
-            "visual_fidelity_priority": "native_trace_hybrid",
-            "source_image_is_coordinate_blueprint_not_final_layer": True,
-            "native_trace_hybrid_default": True,
-            "full_slide_image_backplate_forbidden_by_default": True,
-            "native_density_audit_required": True,
+            "visual_fidelity_priority": "strict_slide_image_to_editable_pptx",
+            "source_image_is_measurement_target_not_final_layer": True,
+            "full_image_or_region_layers_forbidden": True,
             "ordinary_table_or_card_rebuild_forbidden": True,
-            "native_text_boxes_allowed_only_as_transparent_overlays": True,
+            "native_text_shapes_charts_required": True,
             "hidden_text_layer_does_not_count_as_editable": True,
-            "visible_native_overlays_required": True,
-            "processed_icon_assets_required": True,
-            "minimum_render_fix_rounds": DEFAULT_PPTX_RENDER_FIX_LOOP["minimum_rounds"],
+            "strict_icon_extraction_required": True,
+            "icon_contact_sheet_audit_required": True,
+            "source_icon_inventory_required": True,
+            "real_source_icons_must_be_extracted": True,
+            "native_redraw_for_named_pictograms_forbidden": True,
+            "icon_hd_enhancement_required": True,
+            "multiline_text_split_required": True,
+            "minimum_render_compare_rounds": DEFAULT_RENDER_COMPARE_LOOP["minimum_rounds"],
+            "render_round_requires_new_export": True,
+            "qa_gate_required": True,
+            "metrics_gate_reads_actual_render": True,
+            "media_audit_required": True,
         },
         "slides": [],
         "open_questions": [],
     }
-    icon_asset_manifest = {
+    icon_jobs = {
         "status": "draft",
-        "policy_ref": "visual_contract.json.icon_asset_policy",
-        "source_coordinate_space_px": {"width": 3840, "height": 2160},
-        "default_padding_px": DEFAULT_ICON_ASSET_POLICY["minimum_transparent_padding_px"],
-        "default_crop_expansion_px": DEFAULT_ICON_ASSET_POLICY["crop_expansion_px"],
-        "white_threshold": 246,
+        "policy_ref": "visual_contract.json.strict_icon_policy",
+        "source_coordinate_space_px": {"width": 1920, "height": 1080},
+        "extractor_script": "iconcut3.py",
+        "default_padding_px": DEFAULT_STRICT_ICON_POLICY["default_padding_px"],
+        "minimum_output_icon_min_dim_px": DEFAULT_STRICT_ICON_POLICY["minimum_output_icon_min_dim_px"],
+        "icon_hd_enhancement_required": DEFAULT_STRICT_ICON_POLICY["icon_hd_enhancement_required"],
+        "icon_hd_target_min_px": DEFAULT_STRICT_ICON_POLICY["icon_hd_target_min_px"],
+        "feathered_slices_preserve_alpha": DEFAULT_STRICT_ICON_POLICY["feathered_slices_preserve_alpha"],
+        "feathered_slices": [],
         "icons": [],
+        "extracted": [],
+        "exceptions": [],
     }
-    render_fix_rounds = {
+    render_compare_rounds = {
         "status": "not_started",
-        "policy_ref": "visual_contract.json.pptx_render_fix_loop",
-        "minimum_rounds": DEFAULT_PPTX_RENDER_FIX_LOOP["minimum_rounds"],
+        "policy_ref": "visual_contract.json.render_compare_loop",
+        "minimum_rounds": DEFAULT_RENDER_COMPARE_LOOP["minimum_rounds"],
         "completed_rounds": 0,
         "rounds": [],
+        "paired_crops": [],
+        "region_metrics": [],
         "unresolved_p0_p1": [],
     }
+    render_log: list[dict] = []
 
     files = {
         "pipeline_state.json": json.dumps(pipeline_state, ensure_ascii=False, indent=2) + "\n",
@@ -705,9 +748,10 @@ def main() -> int:
         + "\n",
         "template-frame-map.json": json.dumps(template_frame_map, ensure_ascii=False, indent=2) + "\n",
         "visual_contract.json": json.dumps(visual_contract, ensure_ascii=False, indent=2) + "\n",
-        "reconstruction_manifest.json": json.dumps(reconstruction_manifest, ensure_ascii=False, indent=2) + "\n",
-        "assets/icon-manifests/icon_asset_manifest.json": json.dumps(icon_asset_manifest, ensure_ascii=False, indent=2) + "\n",
-        "qa/render-fix/render_fix_rounds.json": json.dumps(render_fix_rounds, ensure_ascii=False, indent=2) + "\n",
+        "conversion_manifest.json": json.dumps(conversion_manifest, ensure_ascii=False, indent=2) + "\n",
+        "icons/icon_jobs.json": json.dumps(icon_jobs, ensure_ascii=False, indent=2) + "\n",
+        "qa/render-compare/render_compare_rounds.json": json.dumps(render_compare_rounds, ensure_ascii=False, indent=2) + "\n",
+        "qa/render-compare/render_log.json": json.dumps(render_log, ensure_ascii=False, indent=2) + "\n",
         "template-audit.md": (
             "# Template Audit\n\n"
             "## Status\nNOT_STARTED\n\n"
@@ -765,7 +809,7 @@ def main() -> int:
             "## Style Direction Gate\n\n"
             "## Visual Comp Gate\n\n"
             "## Template Fidelity Gate\n\n"
-            "## PPTX Reconstruction Gate\n\n"
+            "## PPTX Conversion Gate\n\n"
             "## Reviewer Findings\n\n"
             "## Final Council\n\n"
             "## Editability\n\n"
@@ -795,7 +839,11 @@ def main() -> int:
         "imagegen_retry_log": str(workspace / "imagegen_retry_log.json"),
         "template_frame_map": str(workspace / "template-frame-map.json"),
         "visual_contract": str(workspace / "visual_contract.json"),
-        "reconstruction_manifest": str(workspace / "reconstruction_manifest.json"),
+        "conversion_manifest": str(workspace / "conversion_manifest.json"),
+        "slidelib": str(workspace / "slidelib.py"),
+        "iconcut3": str(workspace / "iconcut3.py"),
+        "qa_gate": str(workspace / "qa_gate.py"),
+        "pitfalls": str(workspace / "PITFALLS.md"),
         "template_audit": str(workspace / "template-audit.md"),
         "deviation_log": str(workspace / "deviation-log.md"),
         "source_notes": str(workspace / "source_notes.md"),

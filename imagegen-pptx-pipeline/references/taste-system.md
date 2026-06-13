@@ -6,7 +6,7 @@ External taste/design skills or documents may be used only as optional supplemen
 
 ## Universal Bar
 
-A successful deck should feel intentionally art-directed, not like a default presentation template. ImageGen should be used to explore composition, diagram language, depth, and visual metaphor. PPTX reconstruction should preserve that visual grammar instead of collapsing it into plain tables, equal card grids, and generic rectangles.
+A successful deck should feel intentionally art-directed, not like a default presentation template. ImageGen should be used to explore composition, diagram language, depth, and visual metaphor. Strict PPTX conversion should preserve that visual grammar instead of collapsing it into plain tables, equal card grids, and generic rectangles.
 
 Default anti-patterns:
 
@@ -147,7 +147,7 @@ Forbid: cartoonish fake hardware, heavy drop shadows, plastic toy UI, uncontroll
 
 ### glassmorphism-blur
 
-Use restrained translucency, blurred backplates, layered depth, frosted panels, fine highlights, and high-contrast text. Glass must support grouping and depth, not hide information.
+Use restrained translucency, blurred depth fields, layered panels, frosted surfaces, fine highlights, and high-contrast text. Glass must support grouping and depth, not hide information.
 
 Forbid: low-legibility glow, blurry text, overused blue-purple panels, bokeh decoration, and weak contrast.
 
@@ -193,13 +193,15 @@ Always request the highest available image detail and a crisp presentation-rende
 
 If a template exists, the prompt must explicitly include the mapped source slide screenshot and protected template elements. Explore inside allowed zones only.
 
-## PPTX Reconstruction Rules
+## PPTX Conversion Rules
 
-The comp is a construction drawing and coordinate blueprint. Rebuild main titles, body text, numbers, footers, page markers, cards, connectors, simple diagrams, and simple geometry as editable/native PPT elements. Retain cropped image layers only when needed for complex backgrounds, texture, depth, illustrations, or hard-to-trace diagram fragments.
+The comp is a measurement target, not a final slide layer. Rebuild main titles, body text, numbers, footers, page markers, cards, connectors, charts, tables, simple diagrams, and simple geometry as editable/native PPT elements using source-pixel coordinates.
 
-Do not deliver a final slide as only one flat image with no editable main information unless the user explicitly accepts non-editable output. A whole-slide comp backplate is a downgrade exception, not the default, and requires recorded user acceptance.
+Do not deliver a final slide as only one flat image with no editable main information unless the user explicitly accepts non-editable output. Full-slide or large region image layers are not the conversion path.
 
-Do not replace a rich ImageGen comp with a generic table, card grid, or default layout because it is easier to author. If native reconstruction would lose the premium feel, retain the complex visual layer from the comp and overlay editable text/shapes.
+Do not replace a rich ImageGen comp with a generic table, card grid, or default layout because it is easier to author. Use `slidelib.py` for native geometry/text and `iconcut3.py` for strict icon extraction. Retain only complex pictograms, photos, official marks, textures, or inseparable art slices as documented image assets.
+
+Every converted output needs a measured build and render-compare evidence: at least 10 real export rounds with distinct render files, paired source/render crops, real region metrics, and a passing `qa_gate.py` audit. If a region diff is over the blocking threshold, fix the slide instead of calling it a font-rendering difference.
 
 ## Optional External Taste Inputs
 

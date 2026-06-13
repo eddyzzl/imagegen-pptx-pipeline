@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "Open-source package for the ImageGen PPTX Pipeline agent skill"
 requires-python = ">=3.10"
 dependencies = [
+  "numpy>=1.26",
   "Pillow>=10",
   "python-pptx>=1.0",
 ]
