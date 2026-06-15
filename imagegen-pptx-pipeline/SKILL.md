@@ -29,6 +29,7 @@ Do not use any legacy audit-script image-to-PPTX path. Do not use full-slide or 
 - **No HTML/browser surrogate comps:** do not create HTML/CSS/SVG/React/canvas screenshots as `styles/*contact-sheet.png` or `slides/slide-XXX-comp.png`. Comps must come from ImageGen/Image2 or from user-supplied final slide images.
 - **Per-slide comps are required:** a full-deck contact sheet alone is never enough for PPTX conversion.
 - **Final single-slide ImageGen comps are serial within each style lane:** parallelize across selected styles if needed, but do not shard final pages across page-owning agents unless the user accepts style drift risk in `user_decisions.md`.
+- **Generated comps require role review evidence:** after each per-slide ImageGen comp is produced, run bounded reviewer subagents for content, text/typography, visual fidelity, style continuity, image art direction, PPTX feasibility, chart logic, asset authenticity, template fidelity, accessibility/readability, and visual clarity. Write one approved JSON artifact per slide under `qa/reviews/slide-comp/` before conversion.
 - **Image clarity is a hard gate:** request the highest available ImageGen detail. Try 4K 16:9 first, fall back only to a deck-wide 2K or 1080p tier after bounded failures, and record the fallback.
 - **Strict converter owns PPTX output:** use measurement, strict HD icon extraction/enhancement, native build, and at least 10 render-compare-fix rounds. Do not ship a generic deck that merely resembles the content.
 - **No full-image or region-image backgrounds:** headings, body text, numbers, labels, card titles, flow nodes, buttons, lines, arrows, charts, tables, cards, and color blocks must be native. Only complex icon artwork, photos, official marks, or inseparable art slices may remain images.
@@ -268,6 +269,14 @@ Each output must be a high-resolution 16:9 slide image:
 
 Review comps before PPTX conversion. Fix P0/P1 findings by targeted ImageGen regeneration, not by hiding defects in PPTX.
 
+For generated ImageGen comps, the comp review is not optional and not a prose-only final note:
+
+1. Read `references/subagent-rubrics.md`.
+2. Dispatch bounded reviewer subagents for the slide-comp roles, or record `reviewer_mode="main_agent_role_review"` with a concrete `subagent_fallback_reason` if subagent tooling is unavailable.
+3. Write one JSON file per slide under `qa/reviews/slide-comp/slide-XXX.json`.
+4. Include all required role reviews, `approval_to_advance=true` for every role, `unresolved_p0_p1=[]`, `overall_status="approved"`, and the exact approved comp path.
+5. If any role returns P0/P1, regenerate or repair the comp, then rerun the review before locking the conversion contract.
+
 ### 9. Lock The Conversion Contract
 
 Before writing PPTX code, translate approved comps into `visual_contract.json` and `conversion_manifest.json`.
@@ -293,6 +302,7 @@ Reject any approved comp path that points to `preview/`, `output/`, template-sta
 Do not proceed to PPTX build until:
 
 - every slide has an approved `slide-XXX-comp.png` or user-supplied final image
+- generated ImageGen comps have matching approved `qa/reviews/slide-comp/slide-XXX.json` evidence for all required roles
 - `conversion_manifest.json.lock_state` is `locked`
 - `visual_contract.json.conversion_policy.method` is `strict_slide_image_to_editable_pptx`
 - `slidelib.py`, `iconcut3.py`, `qa_gate.py`, and `PITFALLS.md` are copied into the workspace
@@ -396,4 +406,4 @@ Keep final deliverables under `output/`; keep internal prompts, measurements, cr
 - Do not let ImageGen OCR output override the structured slide spec.
 - Do not skip rendering previews before claiming the PPTX is finished.
 - Do not ignore a supplied template or replace its visible system with self-designed layouts.
-- Do not use subagents without explicit user authorization or a clear user request for collaborative/multi-agent review.
+- Treat use of this skill for full ImageGen deck generation as authorization for bounded reviewer subagents described in `references/subagent-rubrics.md`. Do not use page-owning subagents to generate final single-slide comps unless the user explicitly accepts style drift risk.

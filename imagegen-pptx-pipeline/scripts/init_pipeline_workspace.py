@@ -124,6 +124,29 @@ DEFAULT_IMAGE_QUALITY_POLICY = {
     ],
 }
 
+DEFAULT_SLIDE_COMP_REVIEW_POLICY = {
+    "enabled": True,
+    "required_before_pptx": True,
+    "require_subagent_review": True,
+    "evidence_dir": "qa/reviews/slide-comp",
+    "reviewer_modes_allowed": ["subagent", "main_agent_role_review"],
+    "fallback_requires_reason": True,
+    "block_on_unresolved_p0_p1": True,
+    "required_roles": [
+        "content-integrity",
+        "text-typography",
+        "visual-fidelity",
+        "style-continuity",
+        "image-art-director",
+        "layout-pptx-feasibility",
+        "chart-logic",
+        "asset-authenticity",
+        "template-fidelity",
+        "accessibility-readability",
+        "visual-clarity",
+    ],
+}
+
 DEFAULT_IMAGEGEN_FAILURE_POLICY = {
     "policy_id": "imagegen-fail-closed-v1",
     "enabled": True,
@@ -656,6 +679,7 @@ def main() -> int:
         "conversion_method": "strict_slide_image_to_editable_pptx",
         "minimum_non_title_rich_visual_ratio": 0.6,
         "image_quality_policy": DEFAULT_IMAGE_QUALITY_POLICY,
+        "slide_comp_review_policy": DEFAULT_SLIDE_COMP_REVIEW_POLICY,
         "conversion_policy": DEFAULT_CONVERSION_POLICY,
         "strict_icon_policy": DEFAULT_STRICT_ICON_POLICY,
         "render_compare_loop": DEFAULT_RENDER_COMPARE_LOOP,

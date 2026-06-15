@@ -317,6 +317,28 @@ Use these structures as the stable handoff between phases. Keep files compact bu
     "prompt_requires_crisp_text_and_icons": true,
     "review_required_before_pptx": true
   },
+  "slide_comp_review_policy": {
+    "enabled": true,
+    "required_before_pptx": true,
+    "require_subagent_review": true,
+    "evidence_dir": "qa/reviews/slide-comp",
+    "reviewer_modes_allowed": ["subagent", "main_agent_role_review"],
+    "fallback_requires_reason": true,
+    "block_on_unresolved_p0_p1": true,
+    "required_roles": [
+      "content-integrity",
+      "text-typography",
+      "visual-fidelity",
+      "style-continuity",
+      "image-art-director",
+      "layout-pptx-feasibility",
+      "chart-logic",
+      "asset-authenticity",
+      "template-fidelity",
+      "accessibility-readability",
+      "visual-clarity"
+    ]
+  },
   "conversion_policy": {
     "enabled": true,
     "method": "strict_slide_image_to_editable_pptx",
@@ -403,6 +425,50 @@ Use these structures as the stable handoff between phases. Keep files compact bu
       }
     }
   ]
+}
+```
+
+## qa/reviews/slide-comp/slide-XXX.json
+
+Required for generated ImageGen comp workflows before PPTX conversion. Direct conversion from user-supplied final images does not use this artifact.
+
+```json
+{
+  "review_type": "slide_comp",
+  "stage": "slide_comp",
+  "slide_id": "slide-001",
+  "style_lane_id": "lane-a",
+  "approved_comp_path": "slides/slide-001-comp.png",
+  "subagent_review_required": true,
+  "reviewer_mode": "subagent | main_agent_role_review",
+  "subagent_fallback_reason": "",
+  "required_roles": [
+    "content-integrity",
+    "text-typography",
+    "visual-fidelity",
+    "style-continuity",
+    "image-art-director",
+    "layout-pptx-feasibility",
+    "chart-logic",
+    "asset-authenticity",
+    "template-fidelity",
+    "accessibility-readability",
+    "visual-clarity"
+  ],
+  "role_reviews": [
+    {
+      "role": "content-integrity",
+      "stage": "slide_comp",
+      "scope": "slide-001",
+      "approval_to_advance": true,
+      "findings": [],
+      "accepted_risks": [],
+      "notes": ""
+    }
+  ],
+  "unresolved_p0_p1": [],
+  "overall_status": "approved",
+  "approval_to_advance": true
 }
 ```
 

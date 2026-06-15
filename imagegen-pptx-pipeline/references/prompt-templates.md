@@ -149,7 +149,8 @@ Requirements:
 5. Avoid unreadable microtext. If exact tiny text is hard, preserve spatial intent and leave exact final copy to strict PPTX conversion from deck_spec.json.
 6. Save raw output under `slides/raw/`.
 7. Save downstream comp as `slides/slide-XXX-comp.png` or `slides/<style-lane-id>/slide-XXX-comp.png`.
-8. Review clarity and style continuity before accepting.
+8. Run slide-comp reviewer roles from `references/subagent-rubrics.md` before accepting.
+9. Write `qa/reviews/slide-comp/slide-XXX.json` with all required role reviews, no unresolved P0/P1, and `overall_status="approved"`.
 ```
 
 ## 6. Conversion Contract

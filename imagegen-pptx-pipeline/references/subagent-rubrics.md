@@ -44,6 +44,20 @@ Severity:
 - `P2`: fix before final if time allows.
 - `P3`: polish note.
 
+## Slide Comp Review Evidence
+
+For generated ImageGen workflows, every approved comp must have one JSON file in `qa/reviews/slide-comp/` before PPTX conversion. Use `reviewer_mode="subagent"` when reviewer subagents were actually dispatched. If subagent tooling is unavailable, use `reviewer_mode="main_agent_role_review"` only with a concrete `subagent_fallback_reason`; do not silently omit the review.
+
+Each slide-comp review JSON must include:
+
+- `review_type="slide_comp"`, `stage="slide_comp"`, `slide_id`, and `approved_comp_path`.
+- `subagent_review_required=true`.
+- all slide-comp roles in `required_roles` and `role_reviews`.
+- `approval_to_advance=true` for every role.
+- `unresolved_p0_p1=[]`, `overall_status="approved"`, and top-level `approval_to_advance=true`.
+
+The required slide-comp roles are `content-integrity`, `text-typography`, `visual-fidelity`, `style-continuity`, `image-art-director`, `layout-pptx-feasibility`, `chart-logic`, `asset-authenticity`, `template-fidelity`, `accessibility-readability`, and `visual-clarity`. Roles that are not applicable to a page, such as `chart-logic` on a non-chart page or `template-fidelity` without a template, still write an approving role review with a short not-applicable note.
+
 ## Role Prompts
 
 ### content-completeness

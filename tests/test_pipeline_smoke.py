@@ -21,6 +21,19 @@ GATE_SCRIPT = SKILL_DIR / "scripts" / "check_pipeline_gates.py"
 SLIDELIB = SKILL_DIR / "slidelib.py"
 ICONCUT = SKILL_DIR / "iconcut3.py"
 QAGATE = SKILL_DIR / "qa_gate.py"
+SLIDE_COMP_REVIEW_ROLES = [
+    "content-integrity",
+    "text-typography",
+    "visual-fidelity",
+    "style-continuity",
+    "image-art-director",
+    "layout-pptx-feasibility",
+    "chart-logic",
+    "asset-authenticity",
+    "template-fidelity",
+    "accessibility-readability",
+    "visual-clarity",
+]
 
 
 def load_module(path: Path, name: str):
@@ -236,6 +249,240 @@ def lock_direct_conversion_workspace(workspace: Path, *, final: bool = False) ->
     )
 
 
+def lock_generated_comp_workspace(workspace: Path) -> None:
+    slide_path = workspace / "slides" / "slide-001-comp.png"
+    sheet_path = workspace / "styles" / "lane-a-contact-sheet.png"
+    slide_path.parent.mkdir(parents=True, exist_ok=True)
+    sheet_path.parent.mkdir(parents=True, exist_ok=True)
+    write_noise_png(slide_path)
+    write_noise_png(sheet_path, width=2400, height=1350)
+
+    deck_spec = json.loads((workspace / "deck_spec.json").read_text(encoding="utf-8"))
+    deck_spec["deck"].update(
+        {
+            "deck_profile": "internal-review",
+            "content_input_type": "explicit_per_page",
+            "slide_count": 1,
+            "lock_state": "locked",
+        }
+    )
+    deck_spec["slides"] = [
+        {
+            "slide_id": "slide-001",
+            "page_number": 1,
+            "title": "Generated Smoke",
+            "claim": "Generated comps require role review evidence.",
+            "body_text": ["Native text"],
+            "proof_object": "diagram",
+            "visual_intent": "Simple smoke layout",
+            "visual_comp_required": True,
+            "comp_path": "slides/slide-001-comp.png",
+            "comp_review_status": "approved",
+            "editable_text": ["title", "body_text"],
+        }
+    ]
+    (workspace / "deck_spec.json").write_text(json.dumps(deck_spec, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+    gate = load_module(GATE_SCRIPT, "gate_fingerprint_smoke")
+    fingerprint = gate.deck_spec_fingerprint(deck_spec)
+
+    state = json.loads((workspace / "pipeline_state.json").read_text(encoding="utf-8"))
+    state["current_stage"] = "visual_contract"
+    state["stage_history"] = [
+        {"stage": "initialized", "status": "completed", "timestamp": "test", "notes": ""},
+        {"stage": "content_gate", "status": "completed", "timestamp": "test", "notes": ""},
+        {"stage": "slide_intent_lock", "status": "completed", "timestamp": "test", "notes": ""},
+        {"stage": "narrative_selection", "status": "completed", "timestamp": "test", "notes": ""},
+        {"stage": "style_selection", "status": "completed", "timestamp": "test", "notes": ""},
+        {"stage": "single_slide_comps", "status": "completed", "timestamp": "test", "notes": ""},
+        {"stage": "slide_comp_review", "status": "completed", "timestamp": "test", "notes": ""},
+        {"stage": "visual_contract", "status": "completed", "timestamp": "test", "notes": ""},
+    ]
+    (workspace / "pipeline_state.json").write_text(json.dumps(state, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+    (workspace / "slide_intent_matrix.md").write_text("# Slide Intent Matrix\n", encoding="utf-8")
+    slide_intent = json.loads((workspace / "slide_intent_plan.json").read_text(encoding="utf-8"))
+    slide_intent.update(
+        {
+            "lock_state": "locked",
+            "source_deck_spec_fingerprint": fingerprint,
+            "review_status": "approved",
+            "slides": [
+                {
+                    "slide_id": "slide-001",
+                    "page_number": 1,
+                    "confirmed_title": "Generated Smoke",
+                    "core_idea": "Generated comps require review.",
+                    "proof_goal": "Show gate enforcement.",
+                    "status": "confirmed",
+                }
+            ],
+            "open_questions": [],
+        }
+    )
+    (workspace / "slide_intent_plan.json").write_text(json.dumps(slide_intent, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+    (workspace / "narrative_matrix.md").write_text("# Narrative Matrix\n", encoding="utf-8")
+    narrative = json.loads((workspace / "narrative_plan.json").read_text(encoding="utf-8"))
+    narrative.update(
+        {
+            "lock_state": "locked",
+            "source_deck_spec_fingerprint": fingerprint,
+            "slide_intent_lock_state": "locked",
+            "selected_narrative_id": "evidence-first",
+            "review_status": "approved",
+            "slides": [
+                {
+                    "slide_id": "slide-001",
+                    "page_number": 1,
+                    "selected_treatment": {
+                        "narrative_id": "evidence-first",
+                        "presentation_strategy": "Lead with gate behavior.",
+                        "content_to_show": "One diagram.",
+                        "proof_object_expression": "Diagram",
+                        "must_preserve": "Single-slide claim",
+                    },
+                }
+            ],
+            "open_questions": [],
+        }
+    )
+    (workspace / "narrative_plan.json").write_text(json.dumps(narrative, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+    style = json.loads((workspace / "style_brief.json").read_text(encoding="utf-8"))
+    style.update(
+        {
+            "direction_count": 1,
+            "selected_narrative_id": "evidence-first",
+            "content_strategy_locked": True,
+            "selected_option": "option-a",
+            "selected_options": ["option-a"],
+            "narrative_lock": {
+                "deck_spec_fingerprint": fingerprint,
+                "locked_slide_count": 1,
+                "locked_slide_order": ["slide-001"],
+                "slide_intent_lock_state": "locked",
+                "narrative_plan_lock_state": "locked",
+            },
+            "candidate_directions": [
+                {
+                    "option_id": "option-a",
+                    "style_lane_id": "lane-a",
+                    "style_id": "mckinsey-consulting-report",
+                    "style_source": "built-in-style-library",
+                    "aesthetic_family": "consulting-report",
+                    "visual_signature": "crisp consulting system diagram",
+                }
+            ],
+            "style_contact_sheets": [
+                {
+                    "path": "styles/lane-a-contact-sheet.png",
+                    "generator": "imagegen",
+                    "style_id": "mckinsey-consulting-report",
+                    "style_source": "built-in-style-library",
+                    "visual_signature": "crisp consulting system diagram",
+                }
+            ],
+        }
+    )
+    (workspace / "style_brief.json").write_text(json.dumps(style, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+    visual_contract = json.loads((workspace / "visual_contract.json").read_text(encoding="utf-8"))
+    visual_contract.update(
+        {
+            "selected_style": "option-a",
+            "selected_styles": ["option-a"],
+            "contact_sheet": "styles/lane-a-contact-sheet.png",
+            "per_slide_comps_complete": True,
+            "conversion_method": "strict_slide_image_to_editable_pptx",
+            "comp_is_conversion_target": True,
+            "slides": [
+                {
+                    "slide_id": "slide-001",
+                    "comp_path": "slides/slide-001-comp.png",
+                    "image_source_type": "imagegen",
+                    "visual_archetype": "diagram",
+                    "clarity_review": {
+                        "status": "approved",
+                        "blocking_blur": False,
+                        "image_dimensions_px": {"width": 1920, "height": 1080},
+                        "image_file_size_bytes": slide_path.stat().st_size,
+                    },
+                    "style_continuity_review": {"status": "approved"},
+                    "converter": {
+                        "measurement_status": "planned",
+                        "text_split_plan": "planned",
+                        "build_script_path": "builders/slide-001.py",
+                        "output_slide_pptx": "slide-modules/slide-001.pptx",
+                        "preview_path": "preview/slide-001-render.png",
+                    },
+                }
+            ],
+        }
+    )
+    (workspace / "visual_contract.json").write_text(json.dumps(visual_contract, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+    manifest = json.loads((workspace / "conversion_manifest.json").read_text(encoding="utf-8"))
+    manifest.update({"lock_state": "locked", "slide_count": 1})
+    manifest["slides"] = [
+        {
+            "slide_id": "slide-001",
+            "source_image_path": "slides/slide-001-comp.png",
+            "basis_image_path": "measurements/slide-001-src.png",
+            "text_source_status": "provided",
+            "measurement_status": "planned",
+            "icon_extraction_status": "not_applicable",
+            "icon_edge_audit_status": "not_applicable",
+            "icon_contact_sheet_audit_status": "not_applicable",
+            "source_icon_inventory_status": "no_source_icons_detected",
+            "extracted_icon_count": 0,
+            "build_script_path": "builders/slide-001.py",
+            "output_slide_pptx": "slide-modules/slide-001.pptx",
+            "preview_path": "preview/slide-001-render.png",
+            "latest_render_path": "preview/slide-001-render.png",
+            "render_log_path": "qa/render-compare/render_log.json",
+            "native_build_status": "planned",
+            "render_compare_rounds_completed": 0,
+            "paired_crops_status": "pending",
+            "max_region_mean_abs": 0,
+            "review_status": "not_started",
+        }
+    ]
+    (workspace / "conversion_manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+
+def write_slide_comp_review(workspace: Path, *, missing_role: str | None = None) -> None:
+    roles = [role for role in SLIDE_COMP_REVIEW_ROLES if role != missing_role]
+    review = {
+        "review_type": "slide_comp",
+        "stage": "slide_comp",
+        "slide_id": "slide-001",
+        "style_lane_id": "lane-a",
+        "approved_comp_path": "slides/slide-001-comp.png",
+        "subagent_review_required": True,
+        "reviewer_mode": "subagent",
+        "required_roles": roles,
+        "role_reviews": [
+            {
+                "role": role,
+                "stage": "slide_comp",
+                "scope": "slide-001",
+                "approval_to_advance": True,
+                "findings": [],
+                "accepted_risks": [],
+                "notes": "approved" if role not in {"chart-logic", "template-fidelity"} else "not applicable for this smoke slide",
+            }
+            for role in roles
+        ],
+        "unresolved_p0_p1": [],
+        "overall_status": "approved",
+        "approval_to_advance": True,
+    }
+    outdir = workspace / "qa" / "reviews" / "slide-comp"
+    outdir.mkdir(parents=True, exist_ok=True)
+    (outdir / "slide-001.json").write_text(json.dumps(review, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+
 class PipelineSmokeTests(unittest.TestCase):
     def test_init_workspace_copies_converter_tools(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -326,6 +573,37 @@ class PipelineSmokeTests(unittest.TestCase):
             lock_direct_conversion_workspace(workspace)
             payload = run_json([sys.executable, str(GATE_SCRIPT), "--workspace", str(workspace), "--stage", "before-pptx"])
             self.assertEqual(payload["status"], "PASS", payload["failures"])
+
+    def test_generated_before_pptx_gate_requires_slide_comp_review(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = init_workspace(Path(tmp), mode="create")
+            lock_generated_comp_workspace(workspace)
+            payload = run_json(
+                [sys.executable, str(GATE_SCRIPT), "--workspace", str(workspace), "--stage", "before-pptx"],
+                check=False,
+            )
+            self.assertEqual(payload["status"], "FAIL")
+            self.assertTrue(any("missing slide-comp review JSON for slide-001" in item for item in payload["failures"]))
+
+    def test_generated_before_pptx_gate_accepts_slide_comp_review_roles(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = init_workspace(Path(tmp), mode="create")
+            lock_generated_comp_workspace(workspace)
+            write_slide_comp_review(workspace)
+            payload = run_json([sys.executable, str(GATE_SCRIPT), "--workspace", str(workspace), "--stage", "before-pptx"])
+            self.assertEqual(payload["status"], "PASS", payload["failures"])
+
+    def test_generated_before_pptx_gate_rejects_incomplete_slide_comp_review_roles(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = init_workspace(Path(tmp), mode="create")
+            lock_generated_comp_workspace(workspace)
+            write_slide_comp_review(workspace, missing_role="text-typography")
+            payload = run_json(
+                [sys.executable, str(GATE_SCRIPT), "--workspace", str(workspace), "--stage", "before-pptx"],
+                check=False,
+            )
+            self.assertEqual(payload["status"], "FAIL")
+            self.assertTrue(any("text-typography" in item for item in payload["failures"]))
 
     def test_gate_rejects_icon_not_applicable_without_inventory(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

@@ -50,6 +50,20 @@ CONTENT_STYLE_TERMS = (
 STYLE_SOURCE_VALUES = {"built-in-style-library", "user-specified", "custom-derived-from-reference"}
 DIRECT_CONVERSION_MODES = {"reconstruction-only", "repair-existing-pptx"}
 ALLOWED_TEXT_STATUS = {"provided", "ocr_verified", "user_accepted_image_text", "image_only_accepted"}
+SLIDE_COMP_REVIEW_ROLES = (
+    "content-integrity",
+    "text-typography",
+    "visual-fidelity",
+    "style-continuity",
+    "image-art-director",
+    "layout-pptx-feasibility",
+    "chart-logic",
+    "asset-authenticity",
+    "template-fidelity",
+    "accessibility-readability",
+    "visual-clarity",
+)
+ALLOWED_SLIDE_COMP_REVIEW_MODES = {"subagent", "main_agent_role_review"}
 A_NS = "http://schemas.openxmlformats.org/drawingml/2006/main"
 P_NS = "http://schemas.openxmlformats.org/presentationml/2006/main"
 
@@ -291,6 +305,17 @@ def workflow_mode(pipeline_state: dict, deck_spec: dict) -> str:
 
 def is_direct_conversion_mode(mode: str) -> bool:
     return mode in DIRECT_CONVERSION_MODES
+
+
+def deck_slide_ids(deck_spec: dict) -> list[str]:
+    slides = deck_spec.get("slides") or []
+    ids: list[str] = []
+    for idx, slide in enumerate(slides, 1):
+        slide_id = ""
+        if isinstance(slide, dict):
+            slide_id = str(slide.get("slide_id") or "").strip()
+        ids.append(slide_id or f"slide-{idx:03d}")
+    return ids
 
 
 def deck_spec_fingerprint(deck_spec: dict) -> str:
@@ -694,6 +719,28 @@ def check_render_compare_loop(visual_contract: dict, failures: list[str]) -> dic
     return loop
 
 
+def check_slide_comp_review_policy(visual_contract: dict, failures: list[str]) -> dict:
+    policy = visual_contract.get("slide_comp_review_policy") or {}
+    if not isinstance(policy, dict) or not policy:
+        failures.append("visual_contract.json slide_comp_review_policy is missing")
+        return {}
+    if policy.get("enabled") is not True:
+        failures.append("visual_contract.json slide_comp_review_policy.enabled must be true")
+    if policy.get("required_before_pptx") is not True:
+        failures.append("visual_contract.json slide_comp_review_policy.required_before_pptx must be true")
+    if policy.get("require_subagent_review") is not True:
+        failures.append("visual_contract.json slide_comp_review_policy.require_subagent_review must be true")
+    if policy.get("evidence_dir") != "qa/reviews/slide-comp":
+        failures.append("visual_contract.json slide_comp_review_policy.evidence_dir must be qa/reviews/slide-comp")
+    if policy.get("block_on_unresolved_p0_p1") is not True:
+        failures.append("visual_contract.json slide_comp_review_policy.block_on_unresolved_p0_p1 must be true")
+    required_roles = set(policy.get("required_roles") or [])
+    missing = [role for role in SLIDE_COMP_REVIEW_ROLES if role not in required_roles]
+    if missing:
+        failures.append("visual_contract.json slide_comp_review_policy.required_roles missing: " + ", ".join(missing))
+    return policy
+
+
 def check_visual_contract(workspace: Path, deck_spec: dict, visual_contract: dict, failures: list[str]) -> None:
     expected_count = deck_spec.get("deck", {}).get("slide_count") or len(deck_spec.get("slides", []))
     direct_conversion = is_direct_conversion_mode(deck_spec.get("deck", {}).get("mode", ""))
@@ -723,6 +770,7 @@ def check_visual_contract(workspace: Path, deck_spec: dict, visual_contract: dic
         comp_generation_mode = visual_contract.get("comp_generation_mode")
         parallel_used = visual_contract.get("parallel_page_subagents_used") is True
         parallel_accepted = visual_contract.get("explicit_parallel_comp_generation_accepted") is True
+        check_slide_comp_review_policy(visual_contract, failures)
         if comp_generation_mode not in {"main_agent_serial_imagegen", "style_sharded_serial_imagegen"} and not parallel_accepted:
             failures.append("visual_contract.json comp_generation_mode must be main_agent_serial_imagegen or style_sharded_serial_imagegen")
         if parallel_used and not parallel_accepted:
@@ -888,12 +936,94 @@ def check_conversion_manifest(workspace: Path, deck_spec: dict, manifest: dict, 
                 failures.append(f"conversion slide {idx:03d} review_status must be approved or user_accepted_risk")
 
 
-def check_reviews(workspace: Path, deck_spec: dict, failures: list[str]) -> None:
+def check_reviews(workspace: Path, deck_spec: dict, visual_contract: dict, failures: list[str]) -> None:
     expected_count = deck_spec.get("deck", {}).get("slide_count") or len(deck_spec.get("slides", []))
+    expected_slide_ids = deck_slide_ids(deck_spec)
     slide_review_dir = workspace / "qa" / "reviews" / "slide-comp"
     review_files = list(slide_review_dir.glob("*.json")) if slide_review_dir.exists() else []
     if expected_count and len(review_files) < expected_count:
         failures.append(f"slide-comp review JSON files are missing: found {len(review_files)}, expected at least {expected_count}")
+
+    contract_comp_by_slide = {}
+    for idx, slide in enumerate(visual_contract.get("slides") or [], 1):
+        if not isinstance(slide, dict):
+            continue
+        slide_id = str(slide.get("slide_id") or f"slide-{idx:03d}")
+        contract_comp_by_slide[slide_id] = slide.get("comp_path") or slide.get("approved_comp_path")
+
+    reviews_by_slide: dict[str, list[tuple[Path, dict]]] = {}
+    for path in sorted(review_files):
+        payload = load_json(path, failures)
+        if not payload:
+            continue
+        slide_id = str(payload.get("slide_id") or path.stem).strip()
+        reviews_by_slide.setdefault(slide_id, []).append((path, payload))
+
+    for slide_id in expected_slide_ids:
+        reviews = reviews_by_slide.get(slide_id, [])
+        if not reviews:
+            failures.append(f"missing slide-comp review JSON for {slide_id}")
+            continue
+        if len(reviews) > 1:
+            failures.append(f"multiple slide-comp review JSON files found for {slide_id}; keep one approved review artifact")
+        review_path, review = reviews[-1]
+        label = review_path.relative_to(workspace)
+        if review.get("review_type") != "slide_comp":
+            failures.append(f"{label} review_type must be slide_comp")
+        if review.get("stage") not in {"slide_comp", "slide_comp_review"}:
+            failures.append(f"{label} stage must be slide_comp or slide_comp_review")
+        if review.get("subagent_review_required") is not True:
+            failures.append(f"{label} subagent_review_required must be true")
+        mode = review.get("reviewer_mode")
+        if mode not in ALLOWED_SLIDE_COMP_REVIEW_MODES:
+            failures.append(f"{label} reviewer_mode must be one of {sorted(ALLOWED_SLIDE_COMP_REVIEW_MODES)}")
+        if mode == "main_agent_role_review" and not str(review.get("subagent_fallback_reason") or "").strip():
+            failures.append(f"{label} main_agent_role_review requires subagent_fallback_reason")
+        if review.get("overall_status") != "approved":
+            failures.append(f"{label} overall_status must be approved")
+        if review.get("approval_to_advance") is not True:
+            failures.append(f"{label} approval_to_advance must be true")
+        if review.get("unresolved_p0_p1"):
+            failures.append(f"{label} unresolved_p0_p1 must be empty")
+        required_roles = set(review.get("required_roles") or [])
+        missing_required = [role for role in SLIDE_COMP_REVIEW_ROLES if role not in required_roles]
+        if missing_required:
+            failures.append(f"{label} required_roles missing: {', '.join(missing_required)}")
+
+        role_reviews = review.get("role_reviews") or []
+        if not isinstance(role_reviews, list):
+            failures.append(f"{label} role_reviews must be a list")
+            role_reviews = []
+        roles_seen: dict[str, dict] = {}
+        for role_review in role_reviews:
+            if not isinstance(role_review, dict):
+                failures.append(f"{label} role_reviews entries must be objects")
+                continue
+            role = str(role_review.get("role") or "").strip()
+            if not role:
+                failures.append(f"{label} role_reviews entry missing role")
+                continue
+            roles_seen[role] = role_review
+            if role_review.get("approval_to_advance") is not True:
+                failures.append(f"{label} role {role} approval_to_advance must be true")
+            if role_review.get("stage") not in {None, "", "slide_comp", "slide_comp_review"}:
+                failures.append(f"{label} role {role} stage must be slide_comp or slide_comp_review")
+            for finding in role_review.get("findings") or []:
+                if not isinstance(finding, dict):
+                    continue
+                if finding.get("severity") in {"P0", "P1"}:
+                    failures.append(f"{label} role {role} still has blocking {finding.get('severity')} finding")
+        missing_roles = [role for role in SLIDE_COMP_REVIEW_ROLES if role not in roles_seen]
+        if missing_roles:
+            failures.append(f"{label} role_reviews missing: {', '.join(missing_roles)}")
+
+        approved_comp = review.get("approved_comp_path")
+        approved_path = require_file(workspace, approved_comp, f"{slide_id} approved comp referenced by slide-comp review", failures)
+        contract_comp = contract_comp_by_slide.get(slide_id)
+        if approved_path and contract_comp:
+            contract_path = resolve_path(workspace, contract_comp)
+            if contract_path and approved_path.resolve() != contract_path.resolve():
+                failures.append(f"{label} approved_comp_path does not match visual_contract.json for {slide_id}")
 
 
 def check_render_compare_log(workspace: Path, visual_contract: dict, failures: list[str]) -> None:
@@ -1091,7 +1221,7 @@ def main() -> int:
             )
         if conversion_stage in {"before-pptx", "final"}:
             check_visual_contract(workspace, deck_spec, visual_contract, failures)
-            check_reviews(workspace, deck_spec, failures)
+            check_reviews(workspace, deck_spec, visual_contract, failures)
             required_stages = {
                 "content_gate",
                 "slide_intent_lock",
