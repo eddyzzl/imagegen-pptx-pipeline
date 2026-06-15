@@ -28,10 +28,17 @@ output/
 *.mp4
 *.mov
 
+# Public README/showcase assets
+!docs/
+!docs/assets/
+!docs/assets/*.png
+!docs/assets/*.jpg
+!docs/assets/*.jpeg
+!docs/assets/*.webp
+
 # Local/private inputs
 input/
 private/
 secrets/
 *.env
 .env*
-
