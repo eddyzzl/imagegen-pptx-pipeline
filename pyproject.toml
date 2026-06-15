@@ -2,6 +2,7 @@
 name = "imagegen-pptx-pipeline-skill"
 version = "0.1.0"
 description = "Open-source package for the ImageGen PPTX Pipeline agent skill"
+readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
   "numpy>=1.26",
@@ -9,6 +10,23 @@ dependencies = [
   "python-pptx>=1.0",
 ]
 license = { text = "MIT" }
+keywords = ["codex", "skill", "powerpoint", "pptx", "imagegen", "presentations"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Multimedia :: Graphics",
+  "Topic :: Office/Business",
+]
+
+[project.urls]
+Homepage = "https://github.com/eddyzzl/imagegen-pptx-pipeline"
+Repository = "https://github.com/eddyzzl/imagegen-pptx-pipeline"
+Issues = "https://github.com/eddyzzl/imagegen-pptx-pipeline/issues"
 
 [tool.ruff]
 line-length = 120

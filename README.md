@@ -1,5 +1,7 @@
 # ImageGen PPTX Pipeline
 
+[![CI](https://github.com/eddyzzl/imagegen-pptx-pipeline/actions/workflows/ci.yml/badge.svg)](https://github.com/eddyzzl/imagegen-pptx-pipeline/actions/workflows/ci.yml)
+
 An agent skill for producing editable PowerPoint decks from outlines, templates, reference decks, data, brand assets, generated slide comps, or user-supplied final slide images.
 
 The pipeline uses ImageGen/Image2 as the visual design engine, then converts approved slide images into faithful editable PPTX with a strict measured converter: `slidelib.py`, `iconcut3.py` with HD icon enhancement, `qa_gate.py`, and at least 10 real render-compare-fix rounds backed by distinct exported render files.
