@@ -14,12 +14,18 @@ Do not use a firm, product, or publication logo unless the user supplied verifie
 
 ## Selection Heuristics
 
-- Strategy, consulting, research, board, and executive decks: start with consulting-report, boardroom, annual-report, or financial-report styles.
-- Product launch, company profile, sales, GTM, and brand decks: start with keynote-launch, corporate-profile, brand-world, or product-surface styles.
-- Technical, AI, model, SaaS, industry, and operations decks: start with technical-schematic, enterprise-saas, industry-system, logistics-system, or healthcare styles.
-- Academic, training, thesis, and education decks: start with academic, lecture, thesis-defense, or classroom-illustration styles.
+- First classify the deck task, audience, and occasion. Candidate styles must be justified by that profile before they are shown to the user.
+- Company or enterprise introduction decks: start with corporate-profile, brand-proposal, editorial-gallery, or justified annual-report treatments. Do not offer promotion, interview, or academic defense styles unless the user asks for a personal/academic framing.
+- Product launch or product introduction decks: start with keynote-launch, product-launch, product-technical, product-surface, spatial-3d, or workspace-minimal styles.
+- Technical, AI, model, SaaS, industry, and operations decks: start with technical-schematic, data-visual, enterprise-saas, industry-system, logistics-system, or healthcare styles.
+- Strategy, consulting, research, board, and executive decision decks: start with consulting-report, research-report, boardroom, annual-report, or financial-report styles.
+- Finance, investor, earnings, fundraising, and roadshow decks: start with annual-report, financial-report, investor-finance, or fintech/industry-finance styles.
+- Sales, GTM, proposal, and solution decks: start with brand-proposal, product-technical, product-launch, company-profile, or evidence-led research/report styles.
+- Training, onboarding, course, and enablement decks: start with training, lecture, workspace-minimal, or education styles.
+- Defense, promotion, interview, personal performance, and thesis decks: start with promotion-defense, personal-performance, interview-case, rigorous-academic, thesis-defense, or conference styles. Do not start with company-profile, annual-report, or system-dashboard styles unless the user explicitly asks for that framing.
 - Portfolio, creative, culture, lifestyle, and event decks: start with editorial-gallery, magazine, vintage, natural, ceremony, travel, or luxury-event styles.
-- Resume or personal decks: start with executive-resume, portfolio, or personal-brand styles.
+
+For multiple style options, vary the visual system and layout archetype at thumbnail scale. Options that keep the same central loop, four-card ring, metric strip, or equal-card grid while only changing icons, lines, labels, or accent colors are not valid separate styles.
 
 ## Canonical Styles
 
@@ -106,6 +112,7 @@ Do not use a firm, product, or publication logo unless the user supplied verifie
 |---|---|---|---|---|---|
 | `university-academic-formal` | University academic formal | academic | academic report, university deck | institutional color block, campus image, research badges, formal typography | fake university marks |
 | `thesis-defense-clean` | Thesis defense clean | academic | thesis, defense, research | calm cover, clear structure, methodology diagrams, source discipline | decoration over method |
+| `rigorous-academic-defense` | Rigorous academic defense | academic | thesis defense, dissertation, research defense | argument spine, literature/method/result logic, citation discipline, restrained institutional palette | consulting report framing |
 | `conference-dark-stage` | Conference dark stage | academic | conference keynote | black stage, strong headline, minimal footer, speaker info, dramatic object | low contrast body copy |
 | `lecture-minimal-white` | Minimal lecture white | academic | class, training, workshop | white field, centered title, thin rules, sparse didactic visuals | empty slide syndrome |
 | `math-classroom-illustration` | Classroom illustration | education-playful | education, children, learning | friendly animals/objects, warm palette, large labels | childish style for adult decks |
@@ -142,6 +149,9 @@ Do not use a firm, product, or publication logo unless the user supplied verifie
 | `travel-photo-album` | Travel photo album | travel-lifestyle | travel, campaign, city story | scrapbook photo collage, handwritten accent, natural paper | casual if audience is formal |
 | `natural-exploration` | Natural exploration | travel-lifestyle | outdoor, environmental, tourism | full-bleed landscape, green data tags, adventure typography | stock travel poster only |
 | `executive-resume-blue` | Executive resume blue | personal-brand | resume, self intro | blue diagonal, portrait circle, contact icon strip, clean resume hierarchy | fake portrait if none supplied |
+| `promotion-defense-evidence` | Promotion defense evidence deck | personal-brand | promotion defense, capability review | achievement proof spine, role scope map, before/after impact, capability ladder, next-level plan | generic consulting loop |
+| `personal-performance-review` | Personal performance review | personal-brand | personal performance, annual self review | timeline of wins, metric evidence, stakeholder map, reflective lessons, future commitments | vanity profile without proof |
+| `interview-case-board` | Interview case board | personal-brand | interview presentation, case interview, panel review | question-to-answer board, concise evidence cards, decision recommendation, interviewer-ready hierarchy | dense annual report style |
 | `creative-portfolio-dark` | Creative portfolio dark | personal-brand | portfolio, creator profile | dark gallery, object hero, large page number, curated samples | content-light vanity |
 | `personal-brand-editorial` | Personal brand editorial | personal-brand | self intro, creator, consultant | editorial portrait, serif title, concise credential blocks | generic LinkedIn look |
 | `lost-poster-documentary` | Documentary notice poster | lifestyle-utility | local poster, notice, community | poster typography, photo proof, contact strip, utility hierarchy | irrelevant to business decks |
@@ -156,11 +166,14 @@ Use one primary `style_id` per option. A secondary influence may be recorded as 
 - risky: `notion-workspace-clean` plus `red-gold-ceremony`
 - risky: `classical-european` plus `cyber-clean-grid`
 
-When a user asks for "McKinsey style, annual report style, Apple keynote style, Notion style, minimalist style, classical style", map them to:
+When a user asks for "McKinsey style, annual report style, Apple keynote style, Notion style, minimalist style, promotion defense style, interview style, rigorous academic style, classical style", map them to:
 
 - McKinsey style: `mckinsey-consulting-report`
 - Enterprise annual report: `enterprise-annual-report` or `luxury-print-annual`
 - Apple launch: `apple-keynote-black` or `apple-keynote-white`
 - Notion style: `notion-workspace-clean`
 - Minimalist style: `lecture-minimal-white`, `swiss-international`, or `brand-proposal-minimal`
+- Promotion defense style: `promotion-defense-evidence` or `personal-performance-review`
+- Interview style: `interview-case-board`
+- Rigorous academic style: `rigorous-academic-defense` or `thesis-defense-clean`
 - Classical style: `classical-european` or `shareholder-letter-editorial`

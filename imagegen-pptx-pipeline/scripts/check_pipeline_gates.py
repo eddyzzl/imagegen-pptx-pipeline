@@ -48,6 +48,8 @@ CONTENT_STYLE_TERMS = (
     "路线",
 )
 STYLE_SOURCE_VALUES = {"built-in-style-library", "user-specified", "custom-derived-from-reference"}
+STYLE_TASK_POLICY_ID = "task-aware-style-recommendation-v1"
+STYLE_DIVERSITY_POLICY_ID = "style-lane-diversity-v1"
 DIRECT_CONVERSION_MODES = {"reconstruction-only", "repair-existing-pptx"}
 ALLOWED_TEXT_STATUS = {"provided", "ocr_verified", "user_accepted_image_text", "image_only_accepted"}
 SLIDE_COMP_REVIEW_ROLES = (
@@ -64,6 +66,17 @@ SLIDE_COMP_REVIEW_ROLES = (
     "visual-clarity",
 )
 ALLOWED_SLIDE_COMP_REVIEW_MODES = {"subagent", "main_agent_role_review"}
+REALESRGAN_TOOL = "python-realesrganer"
+REALESRGAN_ENGINE = "RealESRGANer"
+REALESRGAN_MODEL = "RealESRGAN_x4plus"
+REALESRGAN_MODEL_FILE = "RealESRGAN_x4plus.pth"
+REALESRGAN_DEVICE = "cpu"
+REALESRGAN_TILE = 400
+REALESRGAN_TILE_PAD = 12
+REALESRGAN_PRE_PAD = 0
+REALESRGAN_TARGET_WIDTH = 3840
+REALESRGAN_TARGET_HEIGHT = 2160
+REALESRGAN_ICON_TARGET_MIN = 256
 A_NS = "http://schemas.openxmlformats.org/drawingml/2006/main"
 P_NS = "http://schemas.openxmlformats.org/presentationml/2006/main"
 
@@ -111,6 +124,37 @@ def safe_float(value) -> float:
         return float(value)
     except (TypeError, ValueError):
         return 0.0
+
+
+def normalized_token(value) -> str:
+    return re.sub(r"\s+", " ", str(value or "").strip().lower().replace("_", "-"))
+
+
+def nonempty_list(value) -> list:
+    if not isinstance(value, list):
+        return []
+    return [item for item in value if str(item).strip()]
+
+
+def normalized_text_blob(values: list) -> str:
+    tokens = []
+    for value in values:
+        if isinstance(value, list):
+            tokens.extend(normalized_token(item) for item in value if str(item).strip())
+        elif isinstance(value, dict):
+            tokens.extend(normalized_token(item) for item in value.values() if str(item).strip())
+        elif str(value or "").strip():
+            tokens.append(normalized_token(value))
+    return " | ".join(token for token in tokens if token)
+
+
+def text_matches_signal(text: str, signal: str) -> bool:
+    signal = normalized_token(signal)
+    if not signal:
+        return False
+    if re.fullmatch(r"[a-z0-9-]{1,3}", signal):
+        return re.search(rf"(?<![a-z0-9-]){re.escape(signal)}(?![a-z0-9-])", text) is not None
+    return signal in text
 
 
 def image_size(path: Path) -> tuple[int, int]:
@@ -165,6 +209,124 @@ def file_sha256(path: Path) -> str:
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(chunk)
     return "sha256:" + digest.hexdigest()
+
+
+def same_resolved_path(a: Path | None, b: Path | None) -> bool:
+    if not a or not b:
+        return False
+    try:
+        return a.resolve() == b.resolve()
+    except OSError:
+        return str(a) == str(b)
+
+
+def check_realesrgan_manifest(
+    workspace: Path,
+    manifest_value: str | None,
+    failures: list[str],
+    *,
+    label: str,
+    kind: str,
+    expected_output: str | None = None,
+) -> dict:
+    manifest_path = require_file(workspace, manifest_value, f"{label} Real-ESRGAN manifest", failures)
+    if not manifest_path or not manifest_path.exists():
+        return {}
+    payload = load_json(manifest_path, failures)
+    if payload.get("status") not in {"processed", "approved"}:
+        failures.append(f"{label} Real-ESRGAN manifest status must be processed or approved")
+    if payload.get("tool") != REALESRGAN_TOOL:
+        failures.append(f"{label} Real-ESRGAN manifest.tool must be {REALESRGAN_TOOL}")
+    if payload.get("kind") != kind:
+        failures.append(f"{label} Real-ESRGAN manifest.kind must be {kind}")
+    items = payload.get("items") or []
+    if not isinstance(items, list) or not items:
+        failures.append(f"{label} Real-ESRGAN manifest must include processed items")
+        return payload
+
+    expected_path = resolve_path(workspace, expected_output) if expected_output else None
+    matching_items = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        output_path = resolve_path(workspace, item.get("output_path"))
+        if expected_path is None or same_resolved_path(output_path, expected_path):
+            matching_items.append((item, output_path))
+    if expected_path is not None and not matching_items:
+        failures.append(f"{label} Real-ESRGAN manifest does not reference expected output {expected_path}")
+        return payload
+    if not matching_items:
+        failures.append(f"{label} Real-ESRGAN manifest has no valid processed item")
+        return payload
+
+    item, output_path = matching_items[0]
+    if item.get("status") not in {"processed", "approved"}:
+        failures.append(f"{label} Real-ESRGAN item.status must be processed or approved")
+    if item.get("kind") != kind:
+        failures.append(f"{label} Real-ESRGAN item.kind must be {kind}")
+    if item.get("tool") != REALESRGAN_TOOL:
+        failures.append(f"{label} Real-ESRGAN item.tool must be {REALESRGAN_TOOL}")
+    if item.get("engine") != REALESRGAN_ENGINE:
+        failures.append(f"{label} Real-ESRGAN item.engine must be {REALESRGAN_ENGINE}")
+    if item.get("backend") != "python":
+        failures.append(f"{label} Real-ESRGAN item.backend must be python")
+    if item.get("model") != REALESRGAN_MODEL:
+        failures.append(f"{label} Real-ESRGAN item.model must be {REALESRGAN_MODEL}")
+    if item.get("model_file") != REALESRGAN_MODEL_FILE:
+        failures.append(f"{label} Real-ESRGAN item.model_file must be {REALESRGAN_MODEL_FILE}")
+    model_path = resolve_path(workspace, item.get("model_path"))
+    if not model_path:
+        failures.append(f"{label} Real-ESRGAN item.model_path is missing")
+    elif not model_path.exists():
+        failures.append(f"{label} Real-ESRGAN model_path does not exist: {model_path}")
+    elif model_path.name != REALESRGAN_MODEL_FILE:
+        failures.append(f"{label} Real-ESRGAN model_path must point to {REALESRGAN_MODEL_FILE}")
+    elif item.get("model_sha256") and item.get("model_sha256") != file_sha256(model_path):
+        failures.append(f"{label} Real-ESRGAN model_sha256 does not match {model_path}")
+    if item.get("device") != REALESRGAN_DEVICE:
+        failures.append(f"{label} Real-ESRGAN device must be cpu")
+    if item.get("half") is not False:
+        failures.append(f"{label} Real-ESRGAN half must be false")
+    if safe_int(item.get("scale")) != 4:
+        failures.append(f"{label} Real-ESRGAN item.scale must be 4")
+    if safe_float(item.get("outscale")) <= 0:
+        failures.append(f"{label} Real-ESRGAN item.outscale must be positive")
+    if safe_int(item.get("tile")) != REALESRGAN_TILE:
+        failures.append(f"{label} Real-ESRGAN tile must be {REALESRGAN_TILE}")
+    if safe_int(item.get("tile_pad")) != REALESRGAN_TILE_PAD:
+        failures.append(f"{label} Real-ESRGAN tile_pad must be {REALESRGAN_TILE_PAD}")
+    if safe_int(item.get("pre_pad")) != REALESRGAN_PRE_PAD:
+        failures.append(f"{label} Real-ESRGAN pre_pad must be {REALESRGAN_PRE_PAD}")
+
+    if not output_path:
+        failures.append(f"{label} Real-ESRGAN item.output_path is missing")
+        return payload
+    if not output_path.exists():
+        failures.append(f"{label} Real-ESRGAN output file is missing: {output_path}")
+        return payload
+    expected_sha = item.get("output_sha256")
+    if expected_sha and expected_sha != file_sha256(output_path):
+        failures.append(f"{label} Real-ESRGAN output_sha256 does not match {output_path}")
+
+    width, height = image_size(output_path)
+    declared = item.get("output_px") or {}
+    if declared and (safe_int(declared.get("width")) != width or safe_int(declared.get("height")) != height):
+        failures.append(f"{label} Real-ESRGAN output_px does not match real image dimensions")
+    if kind == "comp":
+        target = item.get("target_px") or {}
+        if safe_int(target.get("width")) != REALESRGAN_TARGET_WIDTH or safe_int(target.get("height")) != REALESRGAN_TARGET_HEIGHT:
+            failures.append(f"{label} Real-ESRGAN target_px must be {REALESRGAN_TARGET_WIDTH}x{REALESRGAN_TARGET_HEIGHT}")
+        if width != REALESRGAN_TARGET_WIDTH or height != REALESRGAN_TARGET_HEIGHT:
+            failures.append(
+                f"{label} Real-ESRGAN comp output must be exactly "
+                f"{REALESRGAN_TARGET_WIDTH}x{REALESRGAN_TARGET_HEIGHT}; got {width}x{height}"
+            )
+    elif kind == "icon":
+        if safe_int(item.get("target_min_px")) < REALESRGAN_ICON_TARGET_MIN:
+            failures.append(f"{label} Real-ESRGAN icon target_min_px must be at least {REALESRGAN_ICON_TARGET_MIN}")
+        if min(width, height) < REALESRGAN_ICON_TARGET_MIN:
+            failures.append(f"{label} Real-ESRGAN icon output minimum dimension must be at least {REALESRGAN_ICON_TARGET_MIN}; got {width}x{height}")
+    return payload
 
 
 def load_json_any(path: Path, failures: list[str]) -> object:
@@ -495,6 +657,156 @@ def check_style_source_fields(owner: str, item: dict, failures: list[str]) -> No
         failures.append(f"{owner} missing visual_signature")
 
 
+def select_style_profile_route(deck_spec: dict, style_brief: dict, policy: dict) -> dict:
+    evidence = style_brief.get("deck_profile_evidence") or {}
+    deck = deck_spec.get("deck", {}) if isinstance(deck_spec, dict) else {}
+    text = normalized_text_blob(
+        [
+            style_brief.get("deck_profile"),
+            deck.get("deck_profile"),
+            evidence.get("primary_profile"),
+            evidence.get("secondary_profiles"),
+            evidence.get("audience"),
+            evidence.get("occasion"),
+            evidence.get("source_signals"),
+            evidence.get("notes"),
+        ]
+    )
+    for route in policy.get("profile_style_routes") or []:
+        if not isinstance(route, dict):
+            continue
+        profile = normalized_token(route.get("profile"))
+        signals = [profile, *nonempty_list(route.get("signals"))]
+        if any(text_matches_signal(text, signal) for signal in signals):
+            return route
+    return {}
+
+
+def check_style_task_policy(deck_spec: dict, style_brief: dict, failures: list[str]) -> dict:
+    deck_profile = normalized_token(style_brief.get("deck_profile") or deck_spec.get("deck", {}).get("deck_profile"))
+    evidence = style_brief.get("deck_profile_evidence") or {}
+    if not deck_profile and not normalized_token(evidence.get("primary_profile")):
+        failures.append("style_brief.json must declare deck_profile or deck_profile_evidence.primary_profile before recommending styles")
+    for key in ("primary_profile", "audience", "occasion"):
+        if not normalized_token(evidence.get(key)):
+            failures.append(f"style_brief.json deck_profile_evidence.{key} is required for task-aware style recommendations")
+    if not nonempty_list(evidence.get("source_signals")):
+        failures.append("style_brief.json deck_profile_evidence.source_signals must record task/audience/occasion cues")
+
+    policy = style_brief.get("style_recommendation_policy") or {}
+    if policy.get("policy_id") != STYLE_TASK_POLICY_ID:
+        failures.append(f"style_brief.json style_recommendation_policy.policy_id must be {STYLE_TASK_POLICY_ID}")
+    for key in (
+        "derive_from_deck_profile",
+        "recommended_styles_must_match_deck_profile",
+        "ask_before_using_off_profile_styles",
+        "off_profile_requires_user_request",
+        "fit_reason_required_per_option",
+    ):
+        if policy.get(key) is not True:
+            failures.append(f"style_brief.json style_recommendation_policy.{key} must be true")
+    routes = policy.get("profile_style_routes") or []
+    if not isinstance(routes, list) or not routes:
+        failures.append("style_brief.json style_recommendation_policy.profile_style_routes must be non-empty")
+    for idx, route in enumerate(routes, 1):
+        if not isinstance(route, dict):
+            failures.append(f"style profile route {idx} must be an object")
+            continue
+        for key in ("profile", "signals", "allowed_style_ids", "allowed_aesthetic_families"):
+            if key == "profile":
+                if not normalized_token(route.get(key)):
+                    failures.append(f"style profile route {idx} missing {key}")
+            elif not nonempty_list(route.get(key)):
+                failures.append(f"style profile route {idx} missing {key}")
+    return select_style_profile_route(deck_spec, style_brief, policy)
+
+
+def check_style_diversity_contract(style_brief: dict, failures: list[str]) -> dict:
+    contract = style_brief.get("diversity_contract") or {}
+    if contract.get("policy_id") != STYLE_DIVERSITY_POLICY_ID:
+        failures.append(f"style_brief.json diversity_contract.policy_id must be {STYLE_DIVERSITY_POLICY_ID}")
+    for key in (
+        "forbid_near_identical_contact_sheets",
+        "reject_icon_only_or_color_only_variation",
+        "require_distinct_style_ids",
+        "require_distinct_aesthetic_families",
+        "require_distinct_layout_archetypes",
+        "require_distinct_evidence_presentation",
+        "require_distinct_thumbnail_differentiators",
+    ):
+        if contract.get(key) is not True:
+            failures.append(f"style_brief.json diversity_contract.{key} must be true")
+    if safe_int(contract.get("minimum_distinct_axes")) < 5:
+        failures.append("style_brief.json diversity_contract.minimum_distinct_axes must be at least 5")
+    required_axes = {normalized_token(item) for item in nonempty_list(contract.get("required_axes"))}
+    for axis in ("style-id", "aesthetic-family", "layout-archetype", "evidence-presentation", "composition-grammar"):
+        if axis not in required_axes:
+            failures.append(f"style_brief.json diversity_contract.required_axes must include {axis}")
+    return contract
+
+
+def candidate_off_profile_allowed(candidate: dict, style_brief: dict) -> bool:
+    style_id = normalized_token(candidate.get("style_id"))
+    family = normalized_token(candidate.get("aesthetic_family"))
+    task_fit = candidate.get("task_fit") or {}
+    if isinstance(task_fit, dict) and task_fit.get("user_requested_off_profile") is True:
+        return True
+    prefs = style_brief.get("user_style_preferences") or {}
+    requested_ids = {normalized_token(item) for item in nonempty_list(prefs.get("requested_style_ids"))}
+    requested_families = {normalized_token(item) for item in nonempty_list(prefs.get("requested_aesthetic_families"))}
+    return style_id in requested_ids or family in requested_families
+
+
+def check_candidate_route_fit(owner: str, candidate: dict, style_brief: dict, route: dict, failures: list[str]) -> None:
+    if not route:
+        return
+    style_source = normalized_token(candidate.get("style_source"))
+    if style_source != "built-in-style-library":
+        return
+    style_id = normalized_token(candidate.get("style_id"))
+    family = normalized_token(candidate.get("aesthetic_family"))
+    allowed_ids = {normalized_token(item) for item in nonempty_list(route.get("allowed_style_ids"))}
+    allowed_families = {normalized_token(item) for item in nonempty_list(route.get("allowed_aesthetic_families"))}
+    if style_id in allowed_ids or family in allowed_families:
+        return
+    if candidate_off_profile_allowed(candidate, style_brief):
+        return
+    profile = route.get("profile") or "matched profile"
+    failures.append(
+        f"{owner} style_id/aesthetic_family is off-profile for {profile}; "
+        "use a route-approved style or record explicit user_requested_off_profile"
+    )
+
+
+def check_candidate_task_and_diversity_fields(owner: str, candidate: dict, style_brief: dict, route: dict, failures: list[str]) -> None:
+    task_fit = candidate.get("task_fit") or {}
+    if not isinstance(task_fit, dict):
+        failures.append(f"{owner} task_fit must be an object")
+        task_fit = {}
+    if task_fit.get("profile_match") is not True and not candidate_off_profile_allowed(candidate, style_brief):
+        failures.append(f"{owner} task_fit.profile_match must be true unless this was explicitly requested by the user")
+    if not normalized_token(task_fit.get("fit_reason") or candidate.get("fit_reason")):
+        failures.append(f"{owner} missing task_fit.fit_reason")
+    if not nonempty_list(task_fit.get("profile_signals_used")):
+        failures.append(f"{owner} task_fit.profile_signals_used must be non-empty")
+
+    for key in ("layout_archetype", "evidence_presentation", "composition_grammar", "density_and_pacing"):
+        if not normalized_token(candidate.get(key)):
+            failures.append(f"{owner} missing {key}")
+    differentiators = candidate.get("thumbnail_differentiators")
+    if len(nonempty_list(differentiators)) < 2:
+        failures.append(f"{owner} thumbnail_differentiators must list at least 2 visible differences")
+    if not normalized_token(candidate.get("must_not_reuse")):
+        failures.append(f"{owner} missing must_not_reuse anti-repetition note")
+    check_candidate_route_fit(owner, candidate, style_brief, route, failures)
+
+
+def require_distinct_values(owner: str, values: list[str], count: int, failures: list[str]) -> None:
+    cleaned = [normalized_token(value) for value in values if normalized_token(value)]
+    if count > 1 and len(set(cleaned)) < min(count, len(cleaned)):
+        failures.append(f"candidate directions must use distinct {owner} values")
+
+
 def check_image_quality_policy(policy, failures: list[str], owner: str) -> dict:
     if not isinstance(policy, dict) or not policy:
         failures.append(f"{owner} image_quality_policy is missing")
@@ -502,13 +814,54 @@ def check_image_quality_policy(policy, failures: list[str], owner: str) -> dict:
     if policy.get("enabled") is not True:
         failures.append(f"{owner} image_quality_policy.enabled must be true")
     requested = policy.get("requested_single_slide_canvas_px") or {}
-    if safe_int(requested.get("width")) < 1920 or safe_int(requested.get("height")) < 1080:
-        failures.append(f"{owner} image_quality_policy.requested_single_slide_canvas_px must target at least 1920x1080")
+    if safe_int(requested.get("width")) < REALESRGAN_TARGET_WIDTH or safe_int(requested.get("height")) < REALESRGAN_TARGET_HEIGHT:
+        failures.append(f"{owner} image_quality_policy.requested_single_slide_canvas_px must target at least 3840x2160")
     minimum = policy.get("minimum_acceptable_comp_px") or {}
-    if safe_int(minimum.get("width")) < 1920 or safe_int(minimum.get("height")) < 1080:
-        failures.append(f"{owner} image_quality_policy.minimum_acceptable_comp_px must be at least 1920x1080")
+    if safe_int(minimum.get("width")) < REALESRGAN_TARGET_WIDTH or safe_int(minimum.get("height")) < REALESRGAN_TARGET_HEIGHT:
+        failures.append(f"{owner} image_quality_policy.minimum_acceptable_comp_px must be at least 3840x2160")
     if safe_int(policy.get("minimum_acceptable_comp_bytes")) < 1024 * 1024:
         failures.append(f"{owner} image_quality_policy.minimum_acceptable_comp_bytes must be at least 1048576")
+    post = policy.get("postprocess_policy") or {}
+    if not isinstance(post, dict) or not post:
+        failures.append(f"{owner} image_quality_policy.postprocess_policy is missing")
+    else:
+        if post.get("enabled") is not True:
+            failures.append(f"{owner} image_quality_policy.postprocess_policy.enabled must be true")
+        if post.get("mandatory") is not True:
+            failures.append(f"{owner} image_quality_policy.postprocess_policy.mandatory must be true")
+        if post.get("normalize_every_comp") is not True:
+            failures.append(f"{owner} image_quality_policy.postprocess_policy.normalize_every_comp must be true")
+        target = post.get("target_px") or {}
+        if safe_int(target.get("width")) != REALESRGAN_TARGET_WIDTH or safe_int(target.get("height")) != REALESRGAN_TARGET_HEIGHT:
+            failures.append(f"{owner} image_quality_policy.postprocess_policy.target_px must be 3840x2160")
+        if post.get("local_repair_script") != "scripts/realesrgan_upscale.py":
+            failures.append(f"{owner} image_quality_policy.postprocess_policy.local_repair_script must be scripts/realesrgan_upscale.py")
+        if post.get("upscale_method") != REALESRGAN_TOOL:
+            failures.append(f"{owner} image_quality_policy.postprocess_policy.upscale_method must be {REALESRGAN_TOOL}")
+        if post.get("realesrgan_backend") != "python":
+            failures.append(f"{owner} image_quality_policy.postprocess_policy.realesrgan_backend must be python")
+        if post.get("realesrgan_engine") != REALESRGAN_ENGINE:
+            failures.append(f"{owner} image_quality_policy.postprocess_policy.realesrgan_engine must be {REALESRGAN_ENGINE}")
+        if post.get("realesrgan_model") != REALESRGAN_MODEL:
+            failures.append(f"{owner} image_quality_policy.postprocess_policy.realesrgan_model must be {REALESRGAN_MODEL}")
+        if post.get("realesrgan_model_file") != REALESRGAN_MODEL_FILE:
+            failures.append(f"{owner} image_quality_policy.postprocess_policy.realesrgan_model_file must be {REALESRGAN_MODEL_FILE}")
+        if post.get("realesrgan_device") != REALESRGAN_DEVICE:
+            failures.append(f"{owner} image_quality_policy.postprocess_policy.realesrgan_device must be cpu")
+        if safe_int(post.get("realesrgan_tile")) != REALESRGAN_TILE:
+            failures.append(f"{owner} image_quality_policy.postprocess_policy.realesrgan_tile must be {REALESRGAN_TILE}")
+        if safe_int(post.get("realesrgan_tile_pad")) != REALESRGAN_TILE_PAD:
+            failures.append(f"{owner} image_quality_policy.postprocess_policy.realesrgan_tile_pad must be {REALESRGAN_TILE_PAD}")
+        if safe_int(post.get("realesrgan_pre_pad")) != REALESRGAN_PRE_PAD:
+            failures.append(f"{owner} image_quality_policy.postprocess_policy.realesrgan_pre_pad must be {REALESRGAN_PRE_PAD}")
+        if post.get("realesrgan_half") is not False:
+            failures.append(f"{owner} image_quality_policy.postprocess_policy.realesrgan_half must be false")
+        if post.get("same_output_dimensions_required") is not True:
+            failures.append(f"{owner} image_quality_policy.postprocess_policy.same_output_dimensions_required must be true")
+        if post.get("downstream_uses_realesrgan_comp") is not True:
+            failures.append(f"{owner} image_quality_policy.postprocess_policy.downstream_uses_realesrgan_comp must be true")
+        if post.get("fallback_allowed_for_postprocess") is not False:
+            failures.append(f"{owner} image_quality_policy.postprocess_policy.fallback_allowed_for_postprocess must be false")
     if policy.get("prompt_requires_crisp_text_and_icons") is not True:
         failures.append(f"{owner} image_quality_policy.prompt_requires_crisp_text_and_icons must be true")
     if policy.get("review_required_before_pptx") is not True:
@@ -519,6 +872,8 @@ def check_image_quality_policy(policy, failures: list[str], owner: str) -> dict:
 def check_style_gate(workspace: Path, deck_spec: dict, slide_intent_plan: dict, narrative_plan: dict, design_system: dict, style_brief: dict, failures: list[str]) -> None:
     check_no_html_surrogates(workspace, failures)
     check_image_quality_policy(style_brief.get("image_quality_policy"), failures, "style_brief.json")
+    matched_profile_route = check_style_task_policy(deck_spec, style_brief, failures)
+    diversity_contract = check_style_diversity_contract(style_brief, failures)
     if style_brief.get("style_variation_scope") != "visual_aesthetic_only":
         failures.append("style_brief.json style_variation_scope must be visual_aesthetic_only")
     if style_brief.get("content_strategy_locked") is not True:
@@ -558,15 +913,28 @@ def check_style_gate(workspace: Path, deck_spec: dict, slide_intent_plan: dict, 
     if count and len(candidates) < count:
         failures.append(f"style_brief.json has {len(candidates)} candidate_directions but direction_count is {count}")
     candidate_options = set()
+    style_ids = []
     families = []
+    layout_archetypes = []
+    evidence_presentations = []
+    composition_grammars = []
     for idx, candidate in enumerate(candidates, 1):
         check_style_source_fields(f"candidate direction {idx}", candidate, failures)
+        check_candidate_task_and_diversity_fields(f"candidate direction {idx}", candidate, style_brief, matched_profile_route, failures)
         if candidate.get("option_id"):
             candidate_options.add(str(candidate.get("option_id")))
+        if candidate.get("style_id"):
+            style_ids.append(str(candidate.get("style_id")))
         if candidate.get("aesthetic_family"):
             families.append(str(candidate.get("aesthetic_family")))
         else:
             failures.append(f"candidate direction {idx} missing aesthetic_family")
+        if candidate.get("layout_archetype"):
+            layout_archetypes.append(str(candidate.get("layout_archetype")))
+        if candidate.get("evidence_presentation"):
+            evidence_presentations.append(str(candidate.get("evidence_presentation")))
+        if candidate.get("composition_grammar"):
+            composition_grammars.append(str(candidate.get("composition_grammar")))
         term = contains_content_style_term(
             {
                 "style_lane_id": candidate.get("style_lane_id"),
@@ -577,8 +945,15 @@ def check_style_gate(workspace: Path, deck_spec: dict, slide_intent_plan: dict, 
         )
         if term:
             failures.append(f"candidate direction {idx} uses content/narrative term {term!r} as a style label")
-    if count > 1 and len(set(families)) < min(count, len(candidates)):
-        failures.append("candidate directions must use distinct aesthetic_family values")
+    if diversity_contract.get("require_distinct_style_ids", True):
+        require_distinct_values("style_id", style_ids, count, failures)
+    if diversity_contract.get("require_distinct_aesthetic_families", True):
+        require_distinct_values("aesthetic_family", families, count, failures)
+    if diversity_contract.get("require_distinct_layout_archetypes", True):
+        require_distinct_values("layout_archetype", layout_archetypes, count, failures)
+    if diversity_contract.get("require_distinct_evidence_presentation", True):
+        require_distinct_values("evidence_presentation", evidence_presentations, count, failures)
+    require_distinct_values("composition_grammar", composition_grammars, count, failures)
     for option in selected_options:
         if candidate_options and option not in candidate_options:
             failures.append(f"style_brief.json selected option {option!r} is not in candidate_directions")
@@ -590,6 +965,9 @@ def check_style_gate(workspace: Path, deck_spec: dict, slide_intent_plan: dict, 
         sheet_path = raw_sheet.get("path") if isinstance(raw_sheet, dict) else raw_sheet
         if isinstance(raw_sheet, dict):
             check_style_source_fields(f"style contact sheet {idx}", raw_sheet, failures)
+            for key in ("layout_archetype", "evidence_presentation", "composition_grammar"):
+                if not normalized_token(raw_sheet.get(key)):
+                    failures.append(f"style contact sheet {idx} missing {key}")
             if raw_sheet.get("generator") != "imagegen":
                 failures.append(f"style contact sheet {idx} must declare generator=imagegen")
             if raw_sheet.get("prompt_path"):
@@ -625,11 +1003,31 @@ def check_conversion_policy(workspace: Path, visual_contract: dict, failures: li
         if policy.get(key) != expected:
             failures.append(f"visual_contract.json conversion_policy.{key} must be {expected}")
         require_file(workspace, expected, expected, failures)
+    if policy.get("realesrgan_upscale_script") != "scripts/realesrgan_upscale.py":
+        failures.append("visual_contract.json conversion_policy.realesrgan_upscale_script must be scripts/realesrgan_upscale.py")
+    require_file(workspace, "scripts/realesrgan_upscale.py", "scripts/realesrgan_upscale.py", failures)
+    if policy.get("realesrgan_backend") != "python":
+        failures.append("visual_contract.json conversion_policy.realesrgan_backend must be python")
+    if policy.get("realesrgan_engine") != REALESRGAN_ENGINE:
+        failures.append(f"visual_contract.json conversion_policy.realesrgan_engine must be {REALESRGAN_ENGINE}")
+    if policy.get("realesrgan_model_file") != REALESRGAN_MODEL_FILE:
+        failures.append(f"visual_contract.json conversion_policy.realesrgan_model_file must be {REALESRGAN_MODEL_FILE}")
+    if policy.get("realesrgan_device") != REALESRGAN_DEVICE:
+        failures.append("visual_contract.json conversion_policy.realesrgan_device must be cpu")
+    if safe_int(policy.get("realesrgan_tile")) != REALESRGAN_TILE:
+        failures.append(f"visual_contract.json conversion_policy.realesrgan_tile must be {REALESRGAN_TILE}")
+    if safe_int(policy.get("realesrgan_tile_pad")) != REALESRGAN_TILE_PAD:
+        failures.append(f"visual_contract.json conversion_policy.realesrgan_tile_pad must be {REALESRGAN_TILE_PAD}")
+    if safe_int(policy.get("realesrgan_pre_pad")) != REALESRGAN_PRE_PAD:
+        failures.append(f"visual_contract.json conversion_policy.realesrgan_pre_pad must be {REALESRGAN_PRE_PAD}")
+    if policy.get("realesrgan_half") is not False:
+        failures.append("visual_contract.json conversion_policy.realesrgan_half must be false")
     basis = policy.get("basis_px") or {}
     if safe_int(basis.get("width")) != 1920 or safe_int(basis.get("height")) != 1080:
         failures.append("visual_contract.json conversion_policy.basis_px must be 1920x1080")
     required_true = (
         "source_image_is_measurement_target",
+        "source_comp_realesrgan_4k_required",
         "native_text_required",
         "native_shapes_required",
         "native_charts_tables_connectors_required",
@@ -641,6 +1039,7 @@ def check_conversion_policy(workspace: Path, visual_contract: dict, failures: li
         "real_source_icons_must_be_extracted",
         "native_redraw_for_named_pictograms_forbidden",
         "icon_hd_enhancement_required",
+        "icon_realesrgan_upscale_required",
     )
     for key in required_true:
         if policy.get(key) is not True:
@@ -676,10 +1075,35 @@ def check_strict_icon_policy(workspace: Path, visual_contract: dict, failures: l
         "native_redraw_for_named_pictograms_forbidden",
         "glyph_helpers_are_placeholder_only",
         "icon_hd_enhancement_required",
+        "realesrgan_upscale_required",
         "feathered_slices_preserve_alpha",
     ):
         if policy.get(key) is not True:
             failures.append(f"visual_contract.json strict_icon_policy.{key} must be true")
+    if policy.get("icon_upscale_method") != REALESRGAN_TOOL:
+        failures.append(f"visual_contract.json strict_icon_policy.icon_upscale_method must be {REALESRGAN_TOOL}")
+    if policy.get("realesrgan_backend") != "python":
+        failures.append("visual_contract.json strict_icon_policy.realesrgan_backend must be python")
+    if policy.get("realesrgan_engine") != REALESRGAN_ENGINE:
+        failures.append(f"visual_contract.json strict_icon_policy.realesrgan_engine must be {REALESRGAN_ENGINE}")
+    if policy.get("realesrgan_model") != REALESRGAN_MODEL:
+        failures.append(f"visual_contract.json strict_icon_policy.realesrgan_model must be {REALESRGAN_MODEL}")
+    if policy.get("realesrgan_model_file") != REALESRGAN_MODEL_FILE:
+        failures.append(f"visual_contract.json strict_icon_policy.realesrgan_model_file must be {REALESRGAN_MODEL_FILE}")
+    if policy.get("realesrgan_device") != REALESRGAN_DEVICE:
+        failures.append("visual_contract.json strict_icon_policy.realesrgan_device must be cpu")
+    if safe_int(policy.get("realesrgan_tile")) != REALESRGAN_TILE:
+        failures.append(f"visual_contract.json strict_icon_policy.realesrgan_tile must be {REALESRGAN_TILE}")
+    if safe_int(policy.get("realesrgan_tile_pad")) != REALESRGAN_TILE_PAD:
+        failures.append(f"visual_contract.json strict_icon_policy.realesrgan_tile_pad must be {REALESRGAN_TILE_PAD}")
+    if safe_int(policy.get("realesrgan_pre_pad")) != REALESRGAN_PRE_PAD:
+        failures.append(f"visual_contract.json strict_icon_policy.realesrgan_pre_pad must be {REALESRGAN_PRE_PAD}")
+    if policy.get("realesrgan_half") is not False:
+        failures.append("visual_contract.json strict_icon_policy.realesrgan_half must be false")
+    if policy.get("icon_upscale_script") != "scripts/realesrgan_upscale.py":
+        failures.append("visual_contract.json strict_icon_policy.icon_upscale_script must be scripts/realesrgan_upscale.py")
+    if policy.get("placement_source_dir") != "icons/upscaled":
+        failures.append("visual_contract.json strict_icon_policy.placement_source_dir must be icons/upscaled")
     if safe_int(policy.get("minimum_output_icon_min_dim_px")) < 256:
         failures.append("visual_contract.json strict_icon_policy.minimum_output_icon_min_dim_px must be at least 256")
     if safe_int(policy.get("icon_hd_target_min_px")) < 256:
@@ -689,6 +1113,25 @@ def check_strict_icon_policy(workspace: Path, visual_contract: dict, failures: l
         manifest = load_json(manifest_path, failures)
         if manifest.get("status") not in {"draft", "ready", "processed", "approved", "not_applicable"}:
             failures.append("icon jobs manifest status must be draft, ready, processed, approved, or not_applicable")
+        for key in (
+            "realesrgan_upscale_required",
+            "icon_upscale_method",
+            "realesrgan_backend",
+            "realesrgan_engine",
+            "realesrgan_model",
+            "realesrgan_model_file",
+            "realesrgan_model_path",
+            "realesrgan_device",
+            "realesrgan_tile",
+            "realesrgan_tile_pad",
+            "realesrgan_pre_pad",
+            "realesrgan_half",
+            "icon_upscale_script",
+            "icon_upscale_manifest_path",
+            "placement_source_dir",
+        ):
+            if policy.get(key) != manifest.get(key):
+                failures.append(f"icon jobs manifest {key} must match visual_contract.json strict_icon_policy")
 
 
 def check_render_compare_loop(visual_contract: dict, failures: list[str]) -> dict:
@@ -801,8 +1244,21 @@ def check_visual_contract(workspace: Path, deck_spec: dict, visual_contract: dic
                     failures.append(f"slide {idx:03d} approved comp dimensions could not be read: {path}")
                 elif width < minimum_width or height < minimum_height:
                     failures.append(f"slide {idx:03d} approved comp must be at least {minimum_width}x{minimum_height}; got {width}x{height}: {path}")
+                elif width != REALESRGAN_TARGET_WIDTH or height != REALESRGAN_TARGET_HEIGHT:
+                    failures.append(
+                        f"slide {idx:03d} approved comp must be exact Real-ESRGAN 4K "
+                        f"{REALESRGAN_TARGET_WIDTH}x{REALESRGAN_TARGET_HEIGHT}; got {width}x{height}: {path}"
+                    )
             if minimum_bytes and path.exists() and path.stat().st_size < minimum_bytes:
                 failures.append(f"slide {idx:03d} approved comp file must be at least {minimum_bytes} bytes; got {path.stat().st_size}: {path}")
+            check_realesrgan_manifest(
+                workspace,
+                slide.get("upscale_manifest_path") or (slide.get("clarity_review") or {}).get("upscale_manifest_path"),
+                failures,
+                label=f"slide {idx:03d} approved comp",
+                kind="comp",
+                expected_output=comp,
+            )
         if not slide.get("visual_archetype"):
             failures.append(f"slide {idx:03d} missing visual_archetype in visual_contract.json")
         clarity = slide.get("clarity_review")
@@ -813,6 +1269,9 @@ def check_visual_contract(workspace: Path, deck_spec: dict, visual_contract: dic
                 failures.append(f"slide {idx:03d} clarity_review.status must be approved or user_accepted_risk")
             if clarity.get("blocking_blur") is not False:
                 failures.append(f"slide {idx:03d} clarity_review.blocking_blur must be false")
+            dims = clarity.get("image_dimensions_px") or {}
+            if dims and (safe_int(dims.get("width")) != REALESRGAN_TARGET_WIDTH or safe_int(dims.get("height")) != REALESRGAN_TARGET_HEIGHT):
+                failures.append(f"slide {idx:03d} clarity_review.image_dimensions_px must be 3840x2160 after Real-ESRGAN")
         if not direct_conversion:
             source_type = slide.get("image_source_type") or (clarity or {}).get("image_source_type")
             if source_type != "imagegen":
@@ -846,6 +1305,11 @@ def check_conversion_manifest(workspace: Path, deck_spec: dict, manifest: dict, 
         require_file(workspace, filename, filename, failures)
         if isinstance(copied, dict) and copied.get(filename) is not True:
             failures.append(f"conversion_manifest.json tool_files.copied_to_workspace.{filename} must be true")
+    if tool_files.get("realesrgan_upscale") != "scripts/realesrgan_upscale.py":
+        failures.append("conversion_manifest.json tool_files.realesrgan_upscale must be scripts/realesrgan_upscale.py")
+    require_file(workspace, "scripts/realesrgan_upscale.py", "scripts/realesrgan_upscale.py", failures)
+    if isinstance(copied, dict) and copied.get("scripts/realesrgan_upscale.py") is not True:
+        failures.append("conversion_manifest.json tool_files.copied_to_workspace.scripts/realesrgan_upscale.py must be true")
     page_modules = manifest.get("page_modules") or {}
     if is_direct_conversion_mode(deck_spec.get("deck", {}).get("mode", "")):
         for key in ("enabled", "per_slide_pptx_required", "merge_after_page_approval"):
@@ -854,6 +1318,7 @@ def check_conversion_manifest(workspace: Path, deck_spec: dict, manifest: dict, 
     global_rules = manifest.get("global_rules") or {}
     required_true = (
         "source_image_is_measurement_target_not_final_layer",
+        "source_comp_realesrgan_4k_required",
         "full_image_or_region_layers_forbidden",
         "ordinary_table_or_card_rebuild_forbidden",
         "native_text_shapes_charts_required",
@@ -863,6 +1328,8 @@ def check_conversion_manifest(workspace: Path, deck_spec: dict, manifest: dict, 
         "source_icon_inventory_required",
         "real_source_icons_must_be_extracted",
         "native_redraw_for_named_pictograms_forbidden",
+        "icon_hd_enhancement_required",
+        "icon_realesrgan_upscale_required",
         "multiline_text_split_required",
         "render_round_requires_new_export",
         "qa_gate_required",
@@ -890,6 +1357,21 @@ def check_conversion_manifest(workspace: Path, deck_spec: dict, manifest: dict, 
         path = require_file(workspace, source_path, f"conversion slide {idx:03d} source image", failures)
         if path and (f"{os.sep}output{os.sep}" in str(path) or f"{os.sep}preview{os.sep}" in str(path)):
             failures.append(f"conversion slide {idx:03d} source image cannot be a PPTX preview/output image: {path}")
+        if path and path.exists():
+            width, height = image_size(path)
+            if width != REALESRGAN_TARGET_WIDTH or height != REALESRGAN_TARGET_HEIGHT:
+                failures.append(
+                    f"conversion slide {idx:03d} source image must be exact Real-ESRGAN 4K "
+                    f"{REALESRGAN_TARGET_WIDTH}x{REALESRGAN_TARGET_HEIGHT}; got {width}x{height}: {path}"
+                )
+        check_realesrgan_manifest(
+            workspace,
+            slide.get("upscale_manifest_path"),
+            failures,
+            label=f"conversion slide {idx:03d} source image",
+            kind="comp",
+            expected_output=source_path,
+        )
         if slide.get("text_source_status") not in ALLOWED_TEXT_STATUS:
             failures.append(f"conversion slide {idx:03d} text_source_status must be one of {sorted(ALLOWED_TEXT_STATUS)}")
         if slide.get("measurement_status") not in {"planned", "completed", "approved"}:
@@ -905,6 +1387,13 @@ def check_conversion_manifest(workspace: Path, deck_spec: dict, manifest: dict, 
                 failures.append(f"conversion slide {idx:03d} extracted_icon_count must be > 0 when icon_extraction_status is passed")
             require_file(workspace, slide.get("icon_jobs_path") or "icons/icon_jobs.json", f"conversion slide {idx:03d} icon jobs", failures)
             require_file(workspace, slide.get("icon_contact_sheet"), f"conversion slide {idx:03d} icon contact sheet", failures)
+            check_realesrgan_manifest(
+                workspace,
+                slide.get("icon_upscale_manifest_path"),
+                failures,
+                label=f"conversion slide {idx:03d} icons",
+                kind="icon",
+            )
         if slide.get("icon_extraction_status") == "not_applicable":
             if slide.get("source_icon_inventory_status") != "no_source_icons_detected":
                 failures.append(

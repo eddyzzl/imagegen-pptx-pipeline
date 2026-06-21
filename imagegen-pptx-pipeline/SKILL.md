@@ -1,6 +1,6 @@
 ---
 name: imagegen-pptx-pipeline
-description: End-to-end stateful workflow for designing and generating editable PowerPoint decks from a brief outline, template PPTX, historical/reference decks, brand assets, and data by using ImageGen/Image2 for materially different visual directions, mandatory reviewed per-slide visual comps, built-in PPT taste/design guidance, and strict slide-image-to-editable-PPTX conversion. Use for product decks, company decks, model/AI/technical decks, sales or GTM decks, strategy/executive decks, investor/board decks, training decks, internal review or defense decks, and any PPT/PPTX automation task that needs pause/resume questions, multiple distinct visual styles, generated or user-supplied slide images converted into faithful fully editable PPTX, strict icon extraction, CJK text placement control, render-compare-fix rounds, hard template preservation, or multi-agent/subagent review of slide images, text accuracy, color, design quality, style, layout, content, and PPTX fidelity before exporting PowerPoint.
+description: End-to-end stateful workflow for designing and generating editable PowerPoint decks from briefs, templates, reference decks, brand assets, data, ImageGen comps, or user-supplied slide images. Uses multi-round content/style confirmation, reviewed per-slide comps, mandatory Real-ESRGAN 4K comp/icon upscaling, built-in PPT taste guidance, and strict slide-image-to-editable-PPTX conversion with native reconstruction, CJK text control, icon extraction, render-compare-fix rounds, hard template preservation, and multi-agent/subagent review of content, typography, image clarity, style, layout, and PPTX fidelity before exporting PowerPoint.
 ---
 
 # ImageGen PPTX Pipeline
@@ -13,6 +13,7 @@ The PPTX conversion phase is now the bundled **strict slide-image converter**:
 
 - `slidelib.py`: native PowerPoint builder in source-pixel coordinates.
 - `iconcut3.py`: strict transparent icon extractor with amputation guards, HD supersampling/sharpening, and no silent fallback.
+- `scripts/realesrgan_upscale.py`: mandatory Python `RealESRGANer` CPU/tile wrapper using `RealESRGAN_x4plus.pth` for exact 3840x2160 slide comps and 256px+ icon assets.
 - `qa_gate.py`: mechanical QA gates that read real renders, real PPTX XML/media, real icon manifests, and real render logs.
 - `PITFALLS.md`: required trap catalog for icon extraction, measurement, python-pptx, LibreOffice rendering, and render-compare loops.
 
@@ -26,16 +27,19 @@ Do not use any legacy audit-script image-to-PPTX path. Do not use full-slide or 
 - **ImageGen owns visual design:** generated images are not loose mood boards. After style selection, each page image is the approved construction target for conversion.
 - **Content, slide intent, and narrative are locked before visual work:** confirm slide titles/core ideas/proof goals, then narrative treatment, then style options.
 - **Style lanes are visual skins, not story lanes:** style options may differ by art direction only. They must not change slide count, order, claims, data, proof object intent, or selected narrative treatment.
+- **Style recommendations must fit the actual task:** classify the deck profile, audience, and occasion before proposing styles. A company profile deck should start from company/brand/corporate-profile styles, a product deck from product/keynote styles, a technical deck from schematic/data styles, a finance deck from finance/investor styles, and a defense/interview deck from personal/academic proof styles. If the user explicitly asks for an off-profile style, honor it and record that it was user-requested.
+- **Multi-style means structural diversity:** different options must use visibly different layout archetypes, evidence-presentation patterns, composition grammar, density/pacing, and title treatment. Options that only swap icons, line styles, small modules, or accent colors on the same skeleton are failed style options.
 - **No HTML/browser surrogate comps:** do not create HTML/CSS/SVG/React/canvas screenshots as `styles/*contact-sheet.png` or `slides/slide-XXX-comp.png`. Comps must come from ImageGen/Image2 or from user-supplied final slide images.
 - **Per-slide comps are required:** a full-deck contact sheet alone is never enough for PPTX conversion.
 - **Final single-slide ImageGen comps are serial within each style lane:** parallelize across selected styles if needed, but do not shard final pages across page-owning agents unless the user accepts style drift risk in `user_decisions.md`.
 - **Generated comps require role review evidence:** after each per-slide ImageGen comp is produced, run bounded reviewer subagents for content, text/typography, visual fidelity, style continuity, image art direction, PPTX feasibility, chart logic, asset authenticity, template fidelity, accessibility/readability, and visual clarity. Write one approved JSON artifact per slide under `qa/reviews/slide-comp/` before conversion.
-- **Image clarity is a hard gate:** request the highest available ImageGen detail. Try 4K 16:9 first, fall back only to a deck-wide 2K or 1080p tier after bounded failures, and record the fallback.
+- **Image clarity is a hard gate:** request the highest available ImageGen detail. Try 4K 16:9 first, fall back only to a deck-wide 2K or 1080p raw tier after bounded failures, and record the fallback.
+- **Real-ESRGAN 4K comp is mandatory:** every generated or user-supplied conversion target must be processed through Python `RealESRGANer` with `RealESRGAN_x4plus.pth`, `device=torch.device("cpu")`, `tile=400`, `tile_pad=12`, `pre_pad=0`, and `half=False` before PPTX conversion. The approved `slides/slide-XXX-comp.png` must be exact 3840x2160 and backed by `upscale/slide-XXX-comp.realesrgan.json`. Do not use Lanczos-only resize, ncnn-vulkan, Photoshop-only upscale, or "already sharp enough" as a bypass.
 - **Strict converter owns PPTX output:** use measurement, strict HD icon extraction/enhancement, native build, and at least 10 render-compare-fix rounds. Do not ship a generic deck that merely resembles the content.
 - **No full-image or region-image backgrounds:** headings, body text, numbers, labels, card titles, flow nodes, buttons, lines, arrows, charts, tables, cards, and color blocks must be native. Only complex icon artwork, photos, official marks, or inseparable art slices may remain images.
 - **Icons fail closed:** every transparent icon must pass `iconcut3.strict_cut3` and a 4-edge alpha audit. On `ClipError`, fix the box or clear rects and rerun. Never hand-crop or alpha-key around the failure.
 - **Real source icons must be extracted, not redrawn:** if a pictogram can be named (target, shield, database, briefcase, person, building, light bulb, cube, chart, people, etc.), treat it as source artwork and extract it with `iconcut3`. Do not use `slidelib` glyph helpers such as `shield()`, `target()`, `person()`, `bars()`, or `trend()` as a fidelity path for real source icons; those helpers are placeholder scaffolding for trivial primitives or temporary layout only. A PPTX with zero extracted icons when the source contains recognizable pictograms is a failed generic redraw.
-- **Icons must be HD-enhanced before placement:** `iconcut3.strict_cut3` supersamples and sharpens strict line-art icons to at least 256px minimum dimension by default. If reusing an existing extracted-icon folder, run `iconcut3.enhance_dir(outdir, feathered=(...))` before building. Feathered opaque slices must be listed in `feathered` or processed with `alpha_crisp=False` so seam-hiding alpha is preserved.
+- **Icons must be HD-enhanced before placement:** `iconcut3.strict_cut3` supersamples and sharpens strict line-art icons to at least 256px minimum dimension by default, then the extracted assets must run through `scripts/realesrgan_upscale.py --kind icon` into `icons/upscaled/`. PPTX placement must use the Real-ESRGAN icon outputs, not the first-pass crops. Feathered opaque slices must preserve alpha and be recorded in the icon manifest.
 - **Icon content audit is separate:** every extracted asset must be checked in a contact sheet. If an asset contains Chinese characters, Latin words, or a text label, re-measure the real pictogram and rebuild the text natively.
 - **Never rely on automatic wrapping for multi-line text:** split CJK/mixed-size/multi-line text into absolute text boxes per source line or run.
 - **Render-compare-fix means 10+ real export rounds:** each counted round must produce a new LibreOffice/Poppler render file. Looking at the same render multiple times is still one round. Keep a strict `render_log.json` list with one object per round: `round`, `render`, `timestamp`, `max_metric`, `issues`, `fix`, and `recheck`.
@@ -53,6 +57,8 @@ cp "$SKILL_DIR/slidelib.py" "$WORKSPACE/slidelib.py"
 cp "$SKILL_DIR/iconcut3.py" "$WORKSPACE/iconcut3.py"
 cp "$SKILL_DIR/qa_gate.py" "$WORKSPACE/qa_gate.py"
 cp "$SKILL_DIR/PITFALLS.md" "$WORKSPACE/PITFALLS.md"
+mkdir -p "$WORKSPACE/scripts"
+cp "$SKILL_DIR/scripts/realesrgan_upscale.py" "$WORKSPACE/scripts/realesrgan_upscale.py"
 ```
 
 Runtime requirements:
@@ -61,6 +67,7 @@ Runtime requirements:
 - `Pillow`, `numpy`, `python-pptx`
 - LibreOffice `soffice`
 - Poppler `pdftoppm`
+- `realesrgan`, `basicsr`, `torch`, and `RealESRGAN_x4plus.pth`
 - `markitdown` optional for text QA
 - an image-viewing path for paired crops and contact sheets
 
@@ -133,7 +140,7 @@ python "$SKILL_DIR/scripts/init_pipeline_workspace.py" \
 
 Use `reconstruction-only` when the user already has final per-slide images and wants direct image-to-PPTX conversion. This is a legacy mode name for compatibility; the implementation path is the strict converter.
 
-Immediately copy `slidelib.py`, `iconcut3.py`, `qa_gate.py`, and `PITFALLS.md` into the workspace before any PPTX conversion work.
+Immediately copy `slidelib.py`, `iconcut3.py`, `qa_gate.py`, `PITFALLS.md`, and `scripts/realesrgan_upscale.py` into the workspace before any PPTX conversion work.
 
 ### 2. Read Inputs
 
@@ -164,9 +171,9 @@ Required inputs:
 - exact text per slide, or permission to OCR and verify text before PPTX conversion
 - optional template/source PPTX for logos, footer, page markers, or corporate chrome
 
-Write and lock:
+First process every supplied image through `scripts/realesrgan_upscale.py --kind comp` so the conversion source is exact 3840x2160 and record its manifest. Then write and lock:
 
-- `conversion_manifest.json`: source image path, text source status, basis image path, measurement status, icon extraction status, render-compare status, strict render-log path, per-slide output path, QA-gate output path, and merge status.
+- `conversion_manifest.json`: raw source path, Real-ESRGAN 4K source image path, `upscale_manifest_path`, text source status, basis image path, measurement status, icon extraction status, render-compare status, strict render-log path, per-slide output path, QA-gate output path, and merge status.
 - minimal `deck_spec.json`: slide count, slide IDs, exact text when known, and editability targets. Set `deck.lock_state="locked"` after text is provided, OCR is verified, or the user accepts image text.
 - `visual_contract.json`: each supplied image becomes an approved conversion target with `conversion_method="strict_slide_image_to_editable_pptx"`.
 
@@ -241,7 +248,13 @@ Do not proceed until:
 
 If the user did not specify a count and did not request full automation, ask for the number of directions and any style preference. If full automation is explicit, default to 4 directions.
 
-Use ImageGen to create materially different full-deck contact-sheet style options from locked content/narrative files. Use concrete `style_id` values from `references/style-library.md` where possible.
+Before recommending directions, fill `style_brief.json.deck_profile_evidence` from the locked content, audience, and occasion, then choose the matching route in `style_brief.json.style_recommendation_policy.profile_style_routes`. The recommendation must explain why each option fits that profile. Do not offer generic lanes just because they are common, and do not reuse a previous task's preferred styles. If the user named a specific style outside the route, add it to `user_style_preferences`, set `task_fit.user_requested_off_profile=true`, and generate it.
+
+Use ImageGen to create materially different full-deck contact-sheet style options from locked content/narrative files. Use concrete `style_id` values from `references/style-library.md` where possible. Examples: enterprise/company introductions should prefer styles such as `corporate-profile-architectural`, `corporate-team-collaboration`, `nordic-business-future`, `brand-proposal-minimal`, or a justified annual-report treatment; product decks should prefer launch/product styles; technical decks should prefer schematic/data styles; finance decks should prefer finance/investor styles; defense/promotion/interview/academic tasks should prefer personal/academic proof styles.
+
+Each candidate direction must record `task_fit`, `layout_archetype`, `evidence_presentation`, `composition_grammar`, `density_and_pacing`, `thumbnail_differentiators`, and `must_not_reuse`. The visible contact sheets must honor those fields. A candidate that keeps the same central loop, four-card ring, equal-card grid, top breadcrumb, bottom metric strip, or red-white frame while only changing icons/colors is invalid and must be regenerated before showing the user.
+
+Prompt every contact sheet with readable PPT targets: body text designed around at least 10-11pt in the eventual editable deck, larger key labels, crisp title edges, and no dense microtext.
 
 Require each direction to preserve:
 
@@ -252,6 +265,8 @@ Require each direction to preserve:
 - selected narrative treatment
 - template frame, if any
 
+Do not proceed until every candidate option is task-fit and structurally distinct across style ID, aesthetic family, layout archetype, evidence presentation, and composition grammar.
+
 Show all contact sheets unless full automation was explicit. Record selected options in `style_brief.json.selected_options`.
 
 Do not proceed until `check_pipeline_gates.py --stage style-selection` passes.
@@ -260,12 +275,30 @@ Do not proceed until `check_pipeline_gates.py --stage style-selection` passes.
 
 For each selected style, generate one complete set of per-slide comps. Keep generation serial within each style lane so page chrome, footer, logo, page number, and title furniture stay consistent.
 
-Each output must be a high-resolution 16:9 slide image:
+Each output must become an exact 3840x2160 16:9 slide image:
 
 - raw ImageGen return under `slides/raw/`
-- downstream comp under `slides/slide-XXX-comp.png` or `slides/<style-lane-id>/slide-XXX-comp.png`
+- Real-ESRGAN processed intermediate under `slides/upscaled/`
+- final downstream comp under `slides/slide-XXX-comp.png` or `slides/<style-lane-id>/slide-XXX-comp.png`
+- Real-ESRGAN manifest under `upscale/slide-XXX-comp.realesrgan.json`
 - prompt under `prompts/`
-- dimensions, source type, review status, and clarity status recorded in `deck_spec.json` and `visual_contract.json`
+- dimensions, source type, review status, clarity status, raw path, final comp path, and `upscale_manifest_path` recorded in `deck_spec.json`, `visual_contract.json`, and `conversion_manifest.json`
+
+Run comp upscaling before review and conversion:
+
+```bash
+python scripts/realesrgan_upscale.py \
+  --input slides/raw/slide-XXX-raw.png \
+  --output slides/slide-XXX-comp.png \
+  --manifest upscale/slide-XXX-comp.realesrgan.json \
+  --kind comp \
+  --model-path /opt/miniconda3/lib/python3.12/site-packages/weights/RealESRGAN_x4plus.pth \
+  --tile 400 \
+  --tile-pad 12 \
+  --pre-pad 0 \
+  --target-width 3840 \
+  --target-height 2160
+```
 
 Review comps before PPTX conversion. Fix P0/P1 findings by targeted ImageGen regeneration, not by hiding defects in PPTX.
 
@@ -284,6 +317,7 @@ Before writing PPTX code, translate approved comps into `visual_contract.json` a
 For each slide record:
 
 - approved comp path
+- raw source path and Real-ESRGAN `upscale_manifest_path`
 - source image dimensions and basis image path
 - exact text source status
 - visual archetype
@@ -305,22 +339,23 @@ Do not proceed to PPTX build until:
 - generated ImageGen comps have matching approved `qa/reviews/slide-comp/slide-XXX.json` evidence for all required roles
 - `conversion_manifest.json.lock_state` is `locked`
 - `visual_contract.json.conversion_policy.method` is `strict_slide_image_to_editable_pptx`
-- `slidelib.py`, `iconcut3.py`, `qa_gate.py`, and `PITFALLS.md` are copied into the workspace
+- `slidelib.py`, `iconcut3.py`, `qa_gate.py`, `PITFALLS.md`, and `scripts/realesrgan_upscale.py` are copied into the workspace
+- every slide's conversion source is exact 3840x2160 and has a matching Real-ESRGAN comp manifest
 - every slide has a measurement plan, text split plan, and converter output path
-- icon assets either pass strict extraction, HD enhancement, and contact-sheet audit, or `not_applicable` is backed by an explicit source-icon inventory stating no recognizable source pictograms exist
+- icon assets either pass strict extraction, Real-ESRGAN HD enhancement, and contact-sheet audit, or `not_applicable` is backed by an explicit source-icon inventory stating no recognizable source pictograms exist
 - `check_pipeline_gates.py --stage before-pptx` passes
 
 ### 10. Convert Slide Images To Editable PPTX
 
 Read `PITFALLS.md` before writing conversion code.
 
-Work in 1920x1080 basis coordinates. Keep the original high-resolution image open as `hd` and use `scale = hd.width / 1920` for extraction.
+Work in 1920x1080 basis coordinates, but use the Real-ESRGAN 4K comp as the high-resolution source. Keep `hd = Image.open(source_image_path)` where `source_image_path` is the 3840x2160 Real-ESRGAN output, and use `scale = hd.width / 1920` for extraction.
 
 Use the strict converter workflow:
 
 1. **Measure:** resize the source to `src.png` at 1920x1080. Use numpy scans for edges, text rows, column runs, color masks, and exact sampled colors. For ambiguous regions, create magnified labeled grid crops with burnt-in coordinates.
-2. **Extract and HD-enhance icons:** default to extraction for every recognizable source pictogram. Use `iconcut3.run_jobs` or `iconcut3.strict_cut3` for line-art/glyph icons; `strict_cut3` supersamples and sharpens to a 256px minimum dimension before adding transparent padding. On `ClipError`, fix coordinates/clears and rerun. If icons already exist, run `iconcut3.enhance_dir(outdir, feathered=(...))` before placing them. For inseparable art, use feathered opaque slices with sampled native underlay color, document the exception, and keep `alpha_crisp=False` for those slice names. Only bare primitives such as plain dots, rings, chevrons, checkmarks, bars, and dividers may be native. Do not use `slidelib` composite glyph helpers to redraw real source icons.
-3. **Audit icons:** run 4-edge alpha audit and visual contact-sheet audit after HD enhancement. Text labels are never icon assets.
+2. **Extract and HD-enhance icons:** default to extraction for every recognizable source pictogram from the 4K `hd` source. Use `iconcut3.run_jobs` or `iconcut3.strict_cut3` for line-art/glyph icons; `strict_cut3` supersamples and sharpens to a 256px minimum dimension before adding transparent padding. On `ClipError`, fix coordinates/clears and rerun. Then run `scripts/realesrgan_upscale.py --kind icon --input icons --output icons/upscaled --manifest icons/icon_upscale_manifest.json --target-min 256` and place only `icons/upscaled/*` assets in PPTX. For inseparable art, use feathered opaque slices with sampled native underlay color, document the exception, and keep `alpha_crisp=False` for those slice names. Only bare primitives such as plain dots, rings, chevrons, checkmarks, bars, and dividers may be native. Do not use `slidelib` composite glyph helpers to redraw real source icons.
+3. **Audit icons:** run 4-edge alpha audit and visual contact-sheet audit after Real-ESRGAN icon enhancement. Text labels are never icon assets.
 4. **Build natively:** use `SB(1920,1080,bg)` from `slidelib.py`. Build text, cards, lines, circles, arrows, charts, tables, page chrome, and simple glyphs as native elements. Split multi-line CJK and mixed-size runs into absolute boxes.
 5. **Render:** use LibreOffice and Poppler:
 
@@ -370,7 +405,7 @@ Blocking QA:
 - final slide count and order match `deck_spec.json`
 - all main text and numbers are visible and editable
 - no full-slide or region-image layer is used as the primary slide
-- every retained icon asset passed strict extraction plus HD enhancement, or has a documented art-slice exception with feathered alpha preserved
+- every retained icon asset passed strict extraction plus Real-ESRGAN HD enhancement, or has a documented art-slice exception with feathered alpha preserved
 - every named source pictogram is extracted or has a documented inseparable-art exception; all-vector icon redraws are blocking defects
 - every slide/output deck has at least 10 real render-compare-fix rounds backed by distinct render files
 - `qa_gate.py all` passes for the latest render and PPTX, and its real metrics support the fidelity claim

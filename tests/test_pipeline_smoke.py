@@ -21,6 +21,7 @@ GATE_SCRIPT = SKILL_DIR / "scripts" / "check_pipeline_gates.py"
 SLIDELIB = SKILL_DIR / "slidelib.py"
 ICONCUT = SKILL_DIR / "iconcut3.py"
 QAGATE = SKILL_DIR / "qa_gate.py"
+REALESRGAN_SCRIPT = SKILL_DIR / "scripts" / "realesrgan_upscale.py"
 SLIDE_COMP_REVIEW_ROLES = [
     "content-integrity",
     "text-typography",
@@ -49,10 +50,10 @@ def run_json(args: list[str], *, check: bool = True) -> dict:
     return json.loads(completed.stdout)
 
 
-def write_noise_png(path: Path, width: int = 1920, height: int = 1080) -> None:
+def write_noise_png(path: Path, width: int = 3840, height: int = 2160) -> None:
     rng = np.random.default_rng(42)
     arr = rng.integers(0, 255, (height, width, 3), dtype=np.uint8)
-    Image.fromarray(arr, "RGB").save(path)
+    Image.fromarray(arr, "RGB").save(path, format="JPEG", quality=82)
 
 
 def sha256(path: Path) -> str:
@@ -61,6 +62,77 @@ def sha256(path: Path) -> str:
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(chunk)
     return "sha256:" + digest.hexdigest()
+
+
+def write_realesrgan_manifest(workspace: Path, source: Path, output: Path, *, kind: str = "comp") -> str:
+    model_path = workspace / "assets" / "models" / "RealESRGAN_x4plus.pth"
+    model_path.parent.mkdir(parents=True, exist_ok=True)
+    if not model_path.exists():
+        model_path.write_bytes(b"fake test RealESRGAN_x4plus weights\n")
+    if kind == "comp":
+        manifest_path = workspace / "upscale" / f"{output.stem}.realesrgan.json"
+        target_px = {"width": 3840, "height": 2160}
+        target_min = None
+    else:
+        manifest_path = workspace / "icons" / "icon_upscale_manifest.json"
+        target_px = None
+        target_min = 256
+    with Image.open(source) as im:
+        input_size = im.size
+    with Image.open(output) as im:
+        output_size = im.size
+    manifest_path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "status": "processed",
+        "tool": "python-realesrganer",
+        "engine": "RealESRGANer",
+        "backend": "python",
+        "generated_at": "test",
+        "kind": kind,
+        "input": str(source),
+        "output": str(output),
+        "model": "RealESRGAN_x4plus",
+        "model_file": "RealESRGAN_x4plus.pth",
+        "model_path": str(model_path),
+        "model_sha256": sha256(model_path),
+        "device": "cpu",
+        "half": False,
+        "tile": 400,
+        "tile_pad": 12,
+        "pre_pad": 0,
+        "items": [
+            {
+                "status": "processed",
+                "kind": kind,
+                "tool": "python-realesrganer",
+                "engine": "RealESRGANer",
+                "backend": "python",
+                "model": "RealESRGAN_x4plus",
+                "model_file": "RealESRGAN_x4plus.pth",
+                "model_path": str(model_path),
+                "model_sha256": sha256(model_path),
+                "device": "cpu",
+                "half": False,
+                "scale": 4,
+                "outscale": 3840 / input_size[0] if kind == "comp" else max(256 / min(input_size), 1.0),
+                "tile": 400,
+                "tile_pad": 12,
+                "pre_pad": 0,
+                "input_path": str(source),
+                "output_path": str(output),
+                "input_sha256": sha256(source),
+                "output_sha256": sha256(output),
+                "input_px": {"width": input_size[0], "height": input_size[1]},
+                "realesrgan_output_px": {"width": output_size[0], "height": output_size[1]},
+                "output_px": {"width": output_size[0], "height": output_size[1]},
+                "target_px": target_px,
+                "target_min_px": target_min,
+                "alpha_preserved": kind == "icon",
+            }
+        ],
+    }
+    manifest_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    return str(manifest_path.relative_to(workspace))
 
 
 def init_workspace(root: Path, mode: str = "reconstruction-only") -> Path:
@@ -82,9 +154,13 @@ def init_workspace(root: Path, mode: str = "reconstruction-only") -> Path:
 
 
 def lock_direct_conversion_workspace(workspace: Path, *, final: bool = False) -> None:
+    raw_path = workspace / "slides" / "raw" / "slide-001-raw.png"
     slide_path = workspace / "slides" / "slide-001-comp.png"
+    raw_path.parent.mkdir(parents=True, exist_ok=True)
     slide_path.parent.mkdir(parents=True, exist_ok=True)
+    write_noise_png(raw_path, width=1920, height=1080)
     write_noise_png(slide_path)
+    upscale_manifest = write_realesrgan_manifest(workspace, raw_path, slide_path)
 
     deck_spec = json.loads((workspace / "deck_spec.json").read_text(encoding="utf-8"))
     deck_spec["deck"].update(
@@ -132,13 +208,16 @@ def lock_direct_conversion_workspace(workspace: Path, *, final: bool = False) ->
                 {
                     "slide_id": "slide-001",
                     "comp_path": "slides/slide-001-comp.png",
+                    "raw_comp_path": "slides/raw/slide-001-raw.png",
+                    "upscale_manifest_path": upscale_manifest,
                     "image_source_type": "user_supplied",
                     "visual_archetype": "diagram",
                     "clarity_review": {
                         "status": "approved",
                         "blocking_blur": False,
-                        "image_dimensions_px": {"width": 1920, "height": 1080},
+                        "image_dimensions_px": {"width": 3840, "height": 2160},
                         "image_file_size_bytes": slide_path.stat().st_size,
+                        "upscale_manifest_path": upscale_manifest,
                     },
                     "converter": {
                         "measurement_status": "approved" if final else "planned",
@@ -162,6 +241,8 @@ def lock_direct_conversion_workspace(workspace: Path, *, final: bool = False) ->
         {
             "slide_id": "slide-001",
             "source_image_path": "slides/slide-001-comp.png",
+            "raw_source_image_path": "slides/raw/slide-001-raw.png",
+            "upscale_manifest_path": upscale_manifest,
             "basis_image_path": "measurements/slide-001-src.png",
             "text_source_status": "provided",
             "measurement_status": "approved" if final else "planned",
@@ -178,8 +259,8 @@ def lock_direct_conversion_workspace(workspace: Path, *, final: bool = False) ->
             "native_build_status": "approved" if final else "planned",
             "render_compare_rounds_completed": 10 if final else 0,
             "paired_crops_status": "passed" if final else "pending",
-            "max_region_mean_abs": 0.0 if final else 0,
-            "actual_max_region_mean_abs": 0.0 if final else 0,
+            "max_region_mean_abs": 5.0 if final else 0,
+            "actual_max_region_mean_abs": 5.0 if final else 0,
             "review_status": "approved" if final else "not_started",
         }
     ]
@@ -195,10 +276,9 @@ def lock_direct_conversion_workspace(workspace: Path, *, final: bool = False) ->
             deck.text(80, 80 + idx * 42, 500, 30, f"Native text run {idx}", size=18, color=slidelib.DARK)
         deck.save(module_pptx)
         (workspace / "preview").mkdir(exist_ok=True)
-        source_render = Image.open(slide_path).convert("RGB")
         for idx in range(1, 11):
-            source_render.save(workspace / "preview" / f"r-{idx}.png")
-        source_render.save(workspace / "preview" / "slide-001-render.png")
+            (workspace / "preview" / f"r-{idx}.png").write_bytes(slide_path.read_bytes())
+        (workspace / "preview" / "slide-001-render.png").write_bytes(slide_path.read_bytes())
         (workspace / "output").mkdir(exist_ok=True)
         output = workspace / "output" / "smoke.pptx"
         output.write_bytes(module_pptx.read_bytes())
@@ -210,7 +290,7 @@ def lock_direct_conversion_workspace(workspace: Path, *, final: bool = False) ->
             "completed_rounds": 10,
             "rounds": [{"round": idx, "pptx": "slide-modules/slide-001.pptx", "render": f"preview/r-{idx}.png", "fixes": [], "unresolved": []} for idx in range(1, 11)],
             "paired_crops": [{"slide_id": "slide-001", "source_crop": "crops/src-title.png", "render_crop": "crops/render-title.png", "status": "passed"}],
-            "region_metrics": [{"slide_id": "slide-001", "region": "title", "mean_abs": 0.0, "status": "normal"}],
+            "region_metrics": [{"slide_id": "slide-001", "region": "title", "mean_abs": 5.0, "status": "normal"}],
             "unresolved_p0_p1": [],
         }
         render_log = [
@@ -218,7 +298,7 @@ def lock_direct_conversion_workspace(workspace: Path, *, final: bool = False) ->
                 "round": idx,
                 "render": f"preview/r-{idx}.png",
                 "timestamp": "test",
-                "max_metric": 0.0,
+                "max_metric": 5.0,
                 "issues": "none",
                 "fix": "none",
                 "recheck": "passed",
@@ -250,12 +330,16 @@ def lock_direct_conversion_workspace(workspace: Path, *, final: bool = False) ->
 
 
 def lock_generated_comp_workspace(workspace: Path) -> None:
+    raw_path = workspace / "slides" / "raw" / "slide-001-raw.png"
     slide_path = workspace / "slides" / "slide-001-comp.png"
     sheet_path = workspace / "styles" / "lane-a-contact-sheet.png"
+    raw_path.parent.mkdir(parents=True, exist_ok=True)
     slide_path.parent.mkdir(parents=True, exist_ok=True)
     sheet_path.parent.mkdir(parents=True, exist_ok=True)
+    write_noise_png(raw_path, width=1920, height=1080)
     write_noise_png(slide_path)
     write_noise_png(sheet_path, width=2400, height=1350)
+    upscale_manifest = write_realesrgan_manifest(workspace, raw_path, slide_path)
 
     deck_spec = json.loads((workspace / "deck_spec.json").read_text(encoding="utf-8"))
     deck_spec["deck"].update(
@@ -353,6 +437,16 @@ def lock_generated_comp_workspace(workspace: Path) -> None:
     style.update(
         {
             "direction_count": 1,
+            "deck_profile": "internal-review",
+            "deck_profile_evidence": {
+                "primary_profile": "internal-review",
+                "secondary_profiles": [],
+                "audience": "internal reviewers",
+                "occasion": "generated comp smoke test",
+                "source_signals": ["deck_spec.deck.deck_profile", "slide claim", "proof object"],
+                "excluded_style_families": [],
+                "notes": "Smoke fixture uses one task-appropriate style lane.",
+            },
             "selected_narrative_id": "evidence-first",
             "content_strategy_locked": True,
             "selected_option": "option-a",
@@ -372,6 +466,17 @@ def lock_generated_comp_workspace(workspace: Path) -> None:
                     "style_source": "built-in-style-library",
                     "aesthetic_family": "consulting-report",
                     "visual_signature": "crisp consulting system diagram",
+                    "task_fit": {
+                        "profile_match": True,
+                        "fit_reason": "Internal review smoke deck needs a simple evidence-first system diagram.",
+                        "profile_signals_used": ["internal-review", "proof object: diagram"],
+                    },
+                    "layout_archetype": "single system diagram",
+                    "evidence_presentation": "one proof object with supporting label",
+                    "composition_grammar": "center-left diagram with sparse annotations",
+                    "density_and_pacing": "low-density single-slide smoke fixture",
+                    "thumbnail_differentiators": ["crisp diagram", "sparse evidence label"],
+                    "must_not_reuse": "Do not collapse into equal-card grid or icon-only variation.",
                 }
             ],
             "style_contact_sheets": [
@@ -381,6 +486,9 @@ def lock_generated_comp_workspace(workspace: Path) -> None:
                     "style_id": "mckinsey-consulting-report",
                     "style_source": "built-in-style-library",
                     "visual_signature": "crisp consulting system diagram",
+                    "layout_archetype": "single system diagram",
+                    "evidence_presentation": "one proof object with supporting label",
+                    "composition_grammar": "center-left diagram with sparse annotations",
                 }
             ],
         }
@@ -400,13 +508,16 @@ def lock_generated_comp_workspace(workspace: Path) -> None:
                 {
                     "slide_id": "slide-001",
                     "comp_path": "slides/slide-001-comp.png",
+                    "raw_comp_path": "slides/raw/slide-001-raw.png",
+                    "upscale_manifest_path": upscale_manifest,
                     "image_source_type": "imagegen",
                     "visual_archetype": "diagram",
                     "clarity_review": {
                         "status": "approved",
                         "blocking_blur": False,
-                        "image_dimensions_px": {"width": 1920, "height": 1080},
+                        "image_dimensions_px": {"width": 3840, "height": 2160},
                         "image_file_size_bytes": slide_path.stat().st_size,
+                        "upscale_manifest_path": upscale_manifest,
                     },
                     "style_continuity_review": {"status": "approved"},
                     "converter": {
@@ -428,6 +539,8 @@ def lock_generated_comp_workspace(workspace: Path) -> None:
         {
             "slide_id": "slide-001",
             "source_image_path": "slides/slide-001-comp.png",
+            "raw_source_image_path": "slides/raw/slide-001-raw.png",
+            "upscale_manifest_path": upscale_manifest,
             "basis_image_path": "measurements/slide-001-src.png",
             "text_source_status": "provided",
             "measurement_status": "planned",
@@ -492,14 +605,22 @@ class PipelineSmokeTests(unittest.TestCase):
             self.assertTrue((workspace / "iconcut3.py").exists())
             self.assertTrue((workspace / "qa_gate.py").exists())
             self.assertTrue((workspace / "PITFALLS.md").exists())
+            self.assertTrue((workspace / "scripts" / "realesrgan_upscale.py").exists())
             self.assertTrue((workspace / "conversion_manifest.json").exists())
             self.assertFalse((workspace / "reconstruction_manifest.json").exists())
             manifest = json.loads((workspace / "conversion_manifest.json").read_text(encoding="utf-8"))
             self.assertEqual(manifest["conversion_method"], "strict_slide_image_to_editable_pptx")
             self.assertTrue(manifest["global_rules"]["icon_hd_enhancement_required"])
+            self.assertTrue(manifest["global_rules"]["source_comp_realesrgan_4k_required"])
+            self.assertTrue(manifest["global_rules"]["icon_realesrgan_upscale_required"])
+            self.assertTrue(manifest["tool_files"]["copied_to_workspace"]["scripts/realesrgan_upscale.py"])
             icon_jobs = json.loads((workspace / "icons" / "icon_jobs.json").read_text(encoding="utf-8"))
             self.assertEqual(icon_jobs["minimum_output_icon_min_dim_px"], 256)
             self.assertEqual(icon_jobs["icon_hd_target_min_px"], 256)
+            self.assertTrue(icon_jobs["realesrgan_upscale_required"])
+            self.assertEqual(icon_jobs["icon_upscale_method"], "python-realesrganer")
+            self.assertEqual(icon_jobs["realesrgan_device"], "cpu")
+            self.assertEqual(icon_jobs["realesrgan_tile"], 400)
 
     def test_slidelib_builds_pptx(self) -> None:
         slidelib = load_module(SLIDELIB, "slidelib_smoke")
@@ -574,6 +695,21 @@ class PipelineSmokeTests(unittest.TestCase):
             payload = run_json([sys.executable, str(GATE_SCRIPT), "--workspace", str(workspace), "--stage", "before-pptx"])
             self.assertEqual(payload["status"], "PASS", payload["failures"])
 
+    def test_before_pptx_gate_rejects_missing_realesrgan_comp_manifest(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = init_workspace(Path(tmp))
+            lock_direct_conversion_workspace(workspace)
+            manifest_path = workspace / "conversion_manifest.json"
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            missing = workspace / manifest["slides"][0]["upscale_manifest_path"]
+            missing.unlink()
+            payload = run_json(
+                [sys.executable, str(GATE_SCRIPT), "--workspace", str(workspace), "--stage", "before-pptx"],
+                check=False,
+            )
+            self.assertEqual(payload["status"], "FAIL")
+            self.assertTrue(any("Real-ESRGAN manifest" in item for item in payload["failures"]))
+
     def test_generated_before_pptx_gate_requires_slide_comp_review(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             workspace = init_workspace(Path(tmp), mode="create")
@@ -591,6 +727,232 @@ class PipelineSmokeTests(unittest.TestCase):
             lock_generated_comp_workspace(workspace)
             write_slide_comp_review(workspace)
             payload = run_json([sys.executable, str(GATE_SCRIPT), "--workspace", str(workspace), "--stage", "before-pptx"])
+            self.assertEqual(payload["status"], "PASS", payload["failures"])
+
+    def test_style_gate_rejects_near_identical_layout_archetypes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = init_workspace(Path(tmp), mode="create")
+            lock_generated_comp_workspace(workspace)
+            duplicate_sheet = workspace / "styles" / "lane-b-contact-sheet.png"
+            write_noise_png(duplicate_sheet, width=2400, height=1350)
+
+            style_path = workspace / "style_brief.json"
+            style = json.loads(style_path.read_text(encoding="utf-8"))
+            base = style["candidate_directions"][0]
+            style.update({"direction_count": 2, "selected_options": ["option-a", "option-b"]})
+            style["candidate_directions"] = [
+                base,
+                {
+                    **base,
+                    "option_id": "option-b",
+                    "style_lane_id": "lane-b",
+                    "style_id": "thesis-defense-clean",
+                    "aesthetic_family": "academic",
+                    "visual_signature": "calm defense deck using the same center-loop skeleton",
+                    "task_fit": {
+                        "profile_match": True,
+                        "fit_reason": "Still presented as a task-fit option for the smoke failure case.",
+                        "profile_signals_used": ["internal-review", "proof object: diagram"],
+                    },
+                    "layout_archetype": base["layout_archetype"],
+                    "evidence_presentation": base["evidence_presentation"],
+                    "composition_grammar": base["composition_grammar"],
+                },
+            ]
+            style["style_contact_sheets"].append(
+                {
+                    "path": "styles/lane-b-contact-sheet.png",
+                    "generator": "imagegen",
+                    "style_id": "thesis-defense-clean",
+                    "style_source": "built-in-style-library",
+                    "visual_signature": "calm defense deck using the same center-loop skeleton",
+                    "layout_archetype": base["layout_archetype"],
+                    "evidence_presentation": base["evidence_presentation"],
+                    "composition_grammar": base["composition_grammar"],
+                }
+            )
+            style_path.write_text(json.dumps(style, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+            payload = run_json(
+                [sys.executable, str(GATE_SCRIPT), "--workspace", str(workspace), "--stage", "style-selection"],
+                check=False,
+            )
+            self.assertEqual(payload["status"], "FAIL")
+            self.assertTrue(any("layout_archetype" in item for item in payload["failures"]))
+            self.assertTrue(any("evidence_presentation" in item for item in payload["failures"]))
+
+    def test_style_gate_accepts_company_profile_route_style(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = init_workspace(Path(tmp), mode="create")
+            lock_generated_comp_workspace(workspace)
+            style_path = workspace / "style_brief.json"
+            style = json.loads(style_path.read_text(encoding="utf-8"))
+            style.update(
+                {
+                    "deck_profile": "company-profile",
+                    "deck_profile_evidence": {
+                        "primary_profile": "company-profile",
+                        "secondary_profiles": [],
+                        "audience": "enterprise customers",
+                        "occasion": "company introduction deck",
+                        "source_signals": ["企业介绍", "company capabilities", "brand trust proof"],
+                        "excluded_style_families": ["personal-brand", "academic"],
+                        "notes": "Company profile should use company/corporate route styles.",
+                    },
+                }
+            )
+            candidate = style["candidate_directions"][0]
+            candidate.update(
+                {
+                    "style_id": "corporate-profile-architectural",
+                    "aesthetic_family": "company-profile",
+                    "visual_signature": "architectural company profile with capability proof",
+                    "task_fit": {
+                        "profile_match": True,
+                        "fit_reason": "Enterprise company introduction needs corporate capability, trust, and scale signals.",
+                        "profile_signals_used": ["company-profile", "企业介绍", "enterprise customers"],
+                    },
+                    "layout_archetype": "company capability map",
+                    "evidence_presentation": "capability proof modules with trust metrics",
+                    "composition_grammar": "corporate hero plus structured proof grid",
+                    "density_and_pacing": "moderate enterprise introduction density",
+                    "thumbnail_differentiators": ["corporate hero", "capability proof map"],
+                    "must_not_reuse": "Do not reuse personal promotion or academic defense skeletons.",
+                }
+            )
+            style["style_contact_sheets"][0].update(
+                {
+                    "style_id": "corporate-profile-architectural",
+                    "aesthetic_family": "company-profile",
+                    "visual_signature": "architectural company profile with capability proof",
+                    "layout_archetype": "company capability map",
+                    "evidence_presentation": "capability proof modules with trust metrics",
+                    "composition_grammar": "corporate hero plus structured proof grid",
+                }
+            )
+            style_path.write_text(json.dumps(style, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+            payload = run_json([sys.executable, str(GATE_SCRIPT), "--workspace", str(workspace), "--stage", "style-selection"])
+            self.assertEqual(payload["status"], "PASS", payload["failures"])
+
+    def test_style_gate_rejects_unrequested_personal_style_for_company_profile(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = init_workspace(Path(tmp), mode="create")
+            lock_generated_comp_workspace(workspace)
+            style_path = workspace / "style_brief.json"
+            style = json.loads(style_path.read_text(encoding="utf-8"))
+            style.update(
+                {
+                    "deck_profile": "company-profile",
+                    "deck_profile_evidence": {
+                        "primary_profile": "company-profile",
+                        "secondary_profiles": [],
+                        "audience": "enterprise customers",
+                        "occasion": "company introduction deck",
+                        "source_signals": ["企业介绍", "company capabilities", "brand trust proof"],
+                        "excluded_style_families": ["personal-brand", "academic"],
+                        "notes": "This fixture intentionally uses an off-profile personal style.",
+                    },
+                }
+            )
+            candidate = style["candidate_directions"][0]
+            candidate.update(
+                {
+                    "style_id": "promotion-defense-evidence",
+                    "aesthetic_family": "personal-brand",
+                    "visual_signature": "personal promotion proof spine misapplied to company intro",
+                    "task_fit": {
+                        "profile_match": True,
+                        "fit_reason": "Intentionally wrong for the smoke failure case.",
+                        "profile_signals_used": ["company-profile", "企业介绍"],
+                    },
+                    "layout_archetype": "personal achievement proof spine",
+                    "evidence_presentation": "individual achievement milestones",
+                    "composition_grammar": "promotion defense ladder",
+                    "density_and_pacing": "personal review cadence",
+                    "thumbnail_differentiators": ["personal proof spine", "promotion ladder"],
+                    "must_not_reuse": "Do not use for company intro.",
+                }
+            )
+            style["style_contact_sheets"][0].update(
+                {
+                    "style_id": "promotion-defense-evidence",
+                    "aesthetic_family": "personal-brand",
+                    "visual_signature": "personal promotion proof spine misapplied to company intro",
+                    "layout_archetype": "personal achievement proof spine",
+                    "evidence_presentation": "individual achievement milestones",
+                    "composition_grammar": "promotion defense ladder",
+                }
+            )
+            style_path.write_text(json.dumps(style, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+            payload = run_json(
+                [sys.executable, str(GATE_SCRIPT), "--workspace", str(workspace), "--stage", "style-selection"],
+                check=False,
+            )
+            self.assertEqual(payload["status"], "FAIL")
+            self.assertTrue(any("off-profile for company-profile" in item for item in payload["failures"]))
+
+    def test_style_gate_accepts_user_requested_off_profile_style(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = init_workspace(Path(tmp), mode="create")
+            lock_generated_comp_workspace(workspace)
+            style_path = workspace / "style_brief.json"
+            style = json.loads(style_path.read_text(encoding="utf-8"))
+            style.update(
+                {
+                    "deck_profile": "company-profile",
+                    "deck_profile_evidence": {
+                        "primary_profile": "company-profile",
+                        "secondary_profiles": [],
+                        "audience": "enterprise customers",
+                        "occasion": "company introduction deck",
+                        "source_signals": ["企业介绍", "company capabilities", "brand trust proof"],
+                        "excluded_style_families": [],
+                        "notes": "User explicitly requested promotion-defense style despite company-profile task.",
+                    },
+                    "user_style_preferences": {
+                        "requested_aesthetic_families": [],
+                        "requested_style_ids": ["promotion-defense-evidence"],
+                        "forbidden_aesthetic_families": [],
+                        "forbidden_style_ids": [],
+                        "notes": "User explicitly requested this off-profile style.",
+                    },
+                }
+            )
+            candidate = style["candidate_directions"][0]
+            candidate.update(
+                {
+                    "style_id": "promotion-defense-evidence",
+                    "aesthetic_family": "personal-brand",
+                    "visual_signature": "promotion proof spine adapted to company introduction content",
+                    "task_fit": {
+                        "profile_match": False,
+                        "user_requested_off_profile": True,
+                        "fit_reason": "Off-profile by route, but the user explicitly requested promotion-defense style.",
+                        "profile_signals_used": ["company-profile", "user requested promotion-defense-evidence"],
+                    },
+                    "layout_archetype": "achievement proof spine",
+                    "evidence_presentation": "milestone impact evidence",
+                    "composition_grammar": "promotion defense ladder adapted to company proof",
+                    "density_and_pacing": "moderate proof-led cadence",
+                    "thumbnail_differentiators": ["proof spine", "promotion-style ladder"],
+                    "must_not_reuse": "Honor requested style without changing company intro claims.",
+                }
+            )
+            style["style_contact_sheets"][0].update(
+                {
+                    "style_id": "promotion-defense-evidence",
+                    "aesthetic_family": "personal-brand",
+                    "visual_signature": "promotion proof spine adapted to company introduction content",
+                    "layout_archetype": "achievement proof spine",
+                    "evidence_presentation": "milestone impact evidence",
+                    "composition_grammar": "promotion defense ladder adapted to company proof",
+                }
+            )
+            style_path.write_text(json.dumps(style, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+            payload = run_json([sys.executable, str(GATE_SCRIPT), "--workspace", str(workspace), "--stage", "style-selection"])
             self.assertEqual(payload["status"], "PASS", payload["failures"])
 
     def test_generated_before_pptx_gate_rejects_incomplete_slide_comp_review_roles(self) -> None:

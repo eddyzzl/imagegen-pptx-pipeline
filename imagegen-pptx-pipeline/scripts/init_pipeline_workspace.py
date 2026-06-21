@@ -31,7 +31,8 @@ BUILT_IN_STYLE_LIBRARY_SOURCE = {
     "used_for": "style lane selection | user style preference mapping | ImageGen style prompts",
     "constraints_used": [
         "choose canonical style_id values instead of vague visual adjectives",
-        "map user references such as McKinsey, annual report, Apple keynote, Notion, minimalist, and classical to concrete style ids",
+        "map the actual deck task, audience, and occasion to profile-appropriate style ids before recommending options",
+        "map user references such as McKinsey, annual report, Apple keynote, Notion, minimalist, promotion defense, interview, and academic defense to concrete style ids",
         "preserve locked narrative and content while changing only visual art direction",
     ],
     "constraints_ignored": [],
@@ -48,35 +49,221 @@ BUILT_IN_TASTE_RULES = [
 
 BUILT_IN_TASTE_ANTI_PATTERNS = [
     "near-identical style options",
+    "style options that only swap icons, lines, or small modules while keeping the same layout skeleton",
+    "off-profile recommendations, such as personal-defense styles for a company profile deck or annual-report styles for an interview deck, unless the user explicitly asked for them",
     "flat table-only deck",
     "generic equal-card grid",
     "default PPT template feel",
     "flat image-only slide without editable overlays",
 ]
 
+STYLE_PROFILE_ROUTES = [
+    {
+        "profile": "company-profile",
+        "signals": ["company-profile", "company intro", "enterprise intro", "corporate profile", "企业介绍", "公司介绍", "品牌介绍"],
+        "allowed_style_ids": [
+            "corporate-profile-architectural",
+            "corporate-team-collaboration",
+            "nordic-business-future",
+            "business-strategy-illustrated",
+            "brand-proposal-minimal",
+            "editorial-gallery-white",
+            "enterprise-annual-report",
+        ],
+        "allowed_aesthetic_families": ["company-profile", "brand-proposal", "editorial-gallery", "annual-report"],
+    },
+    {
+        "profile": "product-launch",
+        "signals": ["product-launch", "product intro", "product deck", "app launch", "产品介绍", "产品发布", "功能发布"],
+        "allowed_style_ids": [
+            "apple-keynote-black",
+            "apple-keynote-white",
+            "mobile-app-launch-clean",
+            "enterprise-saas-blue",
+            "spatial-3d-product",
+            "notion-workspace-clean",
+            "brand-proposal-minimal",
+        ],
+        "allowed_aesthetic_families": ["keynote-launch", "product-launch", "product-technical", "spatial-3d", "workspace-minimal", "brand-proposal"],
+    },
+    {
+        "profile": "technical-model",
+        "signals": ["technical", "model", "ai", "architecture", "mlops", "技术", "模型", "架构", "系统方案"],
+        "allowed_style_ids": [
+            "technical-schematic-premium",
+            "ai-lab-schematic",
+            "data-product-dashboard",
+            "glass-os-interface",
+            "linear-axis-black",
+            "blueprint-architecture",
+            "cyber-clean-grid",
+            "model-lifecycle-map",
+        ],
+        "allowed_aesthetic_families": ["technical-schematic", "data-visual", "glassmorphism-blur", "product-technical", "spatial-3d", "technology-polish"],
+    },
+    {
+        "profile": "strategy-executive",
+        "signals": ["strategy", "executive", "board", "decision", "战略", "管理层", "决策", "董事会"],
+        "allowed_style_ids": [
+            "mckinsey-consulting-report",
+            "bain-red-dot-consulting",
+            "bcg-green-impact-report",
+            "deloitte-insight-minimal",
+            "black-white-strategy",
+            "enterprise-annual-report",
+            "portfolio-thesis-premium",
+        ],
+        "allowed_aesthetic_families": ["consulting-report", "research-report", "annual-report", "investor-finance"],
+    },
+    {
+        "profile": "finance-investor",
+        "signals": ["finance", "investor", "fundraising", "earnings", "annual report", "财报", "投资", "融资", "路演", "业绩"],
+        "allowed_style_ids": [
+            "enterprise-annual-report",
+            "shareholder-letter-editorial",
+            "jpmorgan-financial-supplement",
+            "morgan-stanley-earnings",
+            "quarterly-10q-clean",
+            "portfolio-thesis-premium",
+            "fintech-growth-arrow",
+        ],
+        "allowed_aesthetic_families": ["annual-report", "financial-report", "investor-finance", "industry-finance"],
+    },
+    {
+        "profile": "sales-gtm",
+        "signals": ["sales", "gtm", "proposal", "solution", "销售", "售前", "方案", "解决方案"],
+        "allowed_style_ids": [
+            "brand-proposal-minimal",
+            "corporate-profile-architectural",
+            "business-strategy-illustrated",
+            "enterprise-saas-blue",
+            "mobile-app-launch-clean",
+            "data-product-dashboard",
+            "premium-market-survey",
+        ],
+        "allowed_aesthetic_families": ["brand-proposal", "company-profile", "product-technical", "product-launch", "data-visual", "research-report"],
+    },
+    {
+        "profile": "training-enable",
+        "signals": ["training", "enablement", "onboarding", "course", "培训", "新员工", "课程", "赋能"],
+        "allowed_style_ids": [
+            "training-tech-blue",
+            "public-course-live",
+            "lecture-minimal-white",
+            "notion-workspace-clean",
+            "math-classroom-illustration",
+        ],
+        "allowed_aesthetic_families": ["training", "academic", "workspace-minimal", "education-playful"],
+    },
+    {
+        "profile": "defense-personal",
+        "signals": ["defense", "promotion", "interview", "performance review", "self review", "答辩", "晋升", "面试", "述职", "个人业绩"],
+        "allowed_style_ids": [
+            "promotion-defense-evidence",
+            "personal-performance-review",
+            "interview-case-board",
+            "executive-resume-blue",
+            "personal-brand-editorial",
+            "rigorous-academic-defense",
+            "thesis-defense-clean",
+        ],
+        "allowed_aesthetic_families": ["personal-brand", "academic", "editorial-gallery"],
+    },
+    {
+        "profile": "academic-research",
+        "signals": ["academic", "thesis", "research", "seminar", "论文", "学术", "研究", "课题"],
+        "allowed_style_ids": [
+            "university-academic-formal",
+            "thesis-defense-clean",
+            "rigorous-academic-defense",
+            "conference-dark-stage",
+            "research-seminar-wave",
+            "grant-report-institutional",
+            "whitepaper-curve-pattern",
+        ],
+        "allowed_aesthetic_families": ["academic", "academic-humanities", "research-report"],
+    },
+]
+
+DEFAULT_STYLE_RECOMMENDATION_POLICY = {
+    "policy_id": "task-aware-style-recommendation-v1",
+    "derive_from_deck_profile": True,
+    "recommended_styles_must_match_deck_profile": True,
+    "ask_before_using_off_profile_styles": True,
+    "off_profile_requires_user_request": True,
+    "fit_reason_required_per_option": True,
+    "default_count_when_automatic": 4,
+    "profile_style_routes": STYLE_PROFILE_ROUTES,
+}
+
+DEFAULT_STYLE_DIVERSITY_CONTRACT = {
+    "policy_id": "style-lane-diversity-v1",
+    "forbid_near_identical_contact_sheets": True,
+    "reject_icon_only_or_color_only_variation": True,
+    "require_distinct_style_ids": True,
+    "require_distinct_aesthetic_families": True,
+    "require_distinct_layout_archetypes": True,
+    "require_distinct_evidence_presentation": True,
+    "require_distinct_thumbnail_differentiators": True,
+    "minimum_distinct_axes": 5,
+    "required_axes": [
+        "style_id",
+        "aesthetic_family",
+        "layout_archetype",
+        "evidence_presentation",
+        "composition_grammar",
+        "density_and_pacing",
+    ],
+    "same_skeleton_blocklist": [
+        "same central hub-and-spoke loop",
+        "same four-card ring layout",
+        "same red-white consulting dashboard",
+        "same top breadcrumb plus bottom metric strip",
+        "same equal-card grid with swapped icons",
+    ],
+}
+
 DEFAULT_IMAGE_QUALITY_POLICY = {
-    "policy_id": "imagegen-max-clarity-v1",
+    "policy_id": "imagegen-realesrgan-4k-v1",
     "enabled": True,
     "prompt_detail_level": "highest_available",
     "preferred_single_slide_canvas_px": {"width": 3840, "height": 2160},
     "requested_single_slide_canvas_px": {"width": 3840, "height": 2160},
-    "minimum_acceptable_comp_px": {"width": 1920, "height": 1080},
+    "minimum_acceptable_comp_px": {"width": 3840, "height": 2160},
     "minimum_acceptable_comp_bytes": 1 * 1024 * 1024,
     "postprocess_policy": {
         "enabled": True,
+        "mandatory": True,
         "normalize_every_comp": True,
         "target_px": {"width": 3840, "height": 2160},
-        "local_repair_script": "scripts/normalize_slide_comp.py",
+        "local_repair_script": "scripts/realesrgan_upscale.py",
         "save_raw_imagegen_output": True,
         "raw_output_dir": "slides/raw",
-        "normalized_output_suffix": "-comp.png",
-        "upscale_method": "lanczos",
-        "sharpen_after_resize": True,
+        "upscaled_output_dir": "slides/upscaled",
+        "final_comp_dir": "slides",
+        "final_comp_suffix": "-comp.png",
+        "manifest_dir": "upscale",
+        "manifest_suffix": ".realesrgan.json",
+        "upscale_method": "python-realesrganer",
+        "realesrgan_backend": "python",
+        "realesrgan_engine": "RealESRGANer",
+        "realesrgan_model": "RealESRGAN_x4plus",
+        "realesrgan_model_file": "RealESRGAN_x4plus.pth",
+        "realesrgan_model_path": "assets/models/RealESRGAN_x4plus.pth",
+        "realesrgan_device": "cpu",
+        "realesrgan_tile": 400,
+        "realesrgan_tile_pad": 12,
+        "realesrgan_pre_pad": 0,
+        "realesrgan_half": False,
+        "realesrgan_kind": "comp",
         "same_output_dimensions_required": True,
-        "downstream_uses_normalized_comp": True,
+        "downstream_uses_realesrgan_comp": True,
+        "fallback_allowed_for_postprocess": False,
         "limitations": (
-            "Local upscaling/sharpening improves uniformity and edge clarity but cannot recover "
-            "text detail that ImageGen never produced; visual-clarity review remains mandatory."
+            "Every comp used for PPTX conversion must be processed by Python RealESRGANer on CPU with "
+            "RealESRGAN_x4plus.pth and tile=400 to exact 3840x2160. "
+            "This improves edge clarity but cannot recover text detail that ImageGen never produced; "
+            "visual-clarity review remains mandatory."
         ),
     },
     "resolution_fallback_policy": {
@@ -112,8 +299,9 @@ DEFAULT_IMAGE_QUALITY_POLICY = {
     "review_required_before_pptx": True,
     "small_text_policy": (
         "Avoid unreadable microtext in ImageGen comps. Main titles, key numbers, labels, "
-        "and page markers must be sharp enough for visual review; exact final small copy "
-        "comes from deck_spec.json during PPTX conversion."
+        "and page markers must be sharp enough for visual review. Body text should be designed "
+        "for an editable PPT reading target of at least 10-11pt; exact final small copy comes "
+        "from deck_spec.json during PPTX conversion."
     ),
     "blur_rejection_criteria": [
         "soft or blurry main title",
@@ -216,6 +404,21 @@ DEFAULT_STRICT_ICON_POLICY = {
     "glyph_helpers_are_placeholder_only": True,
     "icon_hd_enhancement_required": True,
     "icon_hd_target_min_px": 256,
+    "realesrgan_upscale_required": True,
+    "icon_upscale_method": "python-realesrganer",
+    "realesrgan_backend": "python",
+    "realesrgan_engine": "RealESRGANer",
+    "realesrgan_model": "RealESRGAN_x4plus",
+    "realesrgan_model_file": "RealESRGAN_x4plus.pth",
+    "realesrgan_model_path": "assets/models/RealESRGAN_x4plus.pth",
+    "realesrgan_device": "cpu",
+    "realesrgan_tile": 400,
+    "realesrgan_tile_pad": 12,
+    "realesrgan_pre_pad": 0,
+    "realesrgan_half": False,
+    "icon_upscale_script": "scripts/realesrgan_upscale.py",
+    "icon_upscale_manifest_path": "icons/icon_upscale_manifest.json",
+    "placement_source_dir": "icons/upscaled",
     "feathered_slices_preserve_alpha": True,
     "minimum_output_icon_min_dim_px": 256,
     "default_padding_px": 10,
@@ -223,7 +426,8 @@ DEFAULT_STRICT_ICON_POLICY = {
     "allow_feathered_opaque_slices_for_inseparable_art": True,
     "notes": (
         "Before PPTX conversion, inventory recognizable source pictograms and crop them with iconcut3.strict_cut3. "
-        "Strict line-art icons must be supersampled/sharpened before placement; feathered opaque slices must preserve their soft alpha. "
+        "Strict line-art icons must be supersampled/sharpened, then passed through Python RealESRGANer on CPU before placement; "
+        "feathered opaque slices must preserve their soft alpha. "
         "A clean alpha edge is not enough; the contact sheet must also prove every asset is a pictogram and not a boxed text label. "
         "slidelib glyph helpers are placeholder scaffolding only, not a fidelity path for named source icons."
     ),
@@ -253,8 +457,18 @@ DEFAULT_CONVERSION_POLICY = {
     "icon_extractor_script": "iconcut3.py",
     "qa_gate_script": "qa_gate.py",
     "pitfalls_reference": "PITFALLS.md",
+    "realesrgan_upscale_script": "scripts/realesrgan_upscale.py",
+    "realesrgan_backend": "python",
+    "realesrgan_engine": "RealESRGANer",
+    "realesrgan_model_file": "RealESRGAN_x4plus.pth",
+    "realesrgan_device": "cpu",
+    "realesrgan_tile": 400,
+    "realesrgan_tile_pad": 12,
+    "realesrgan_pre_pad": 0,
+    "realesrgan_half": False,
     "basis_px": {"width": 1920, "height": 1080},
     "source_image_is_measurement_target": True,
+    "source_comp_realesrgan_4k_required": True,
     "full_image_backgrounds_allowed": False,
     "region_image_backgrounds_allowed": False,
     "native_text_required": True,
@@ -268,6 +482,7 @@ DEFAULT_CONVERSION_POLICY = {
     "real_source_icons_must_be_extracted": True,
     "native_redraw_for_named_pictograms_forbidden": True,
     "icon_hd_enhancement_required": True,
+    "icon_realesrgan_upscale_required": True,
     "minimum_render_compare_rounds": 10,
     "render_round_requires_new_export": True,
     "qa_gate_required": True,
@@ -275,7 +490,8 @@ DEFAULT_CONVERSION_POLICY = {
     "media_audit_required": True,
     "notes": (
         "Measure the approved slide image, extract icons strictly, build native PPTX with slidelib, "
-        "then render and compare until paired crops and region metrics converge."
+        "then render and compare until paired crops and region metrics converge. "
+        "The approved slide image must be the exact 3840x2160 Python RealESRGANer CPU output."
     ),
 }
 
@@ -310,15 +526,20 @@ def main() -> int:
         "input",
         "slides",
         "slides/raw",
+        "slides/upscaled",
+        "upscale",
         "assets",
         "assets/icons",
         "icons",
+        "icons/upscaled",
         "icon-sheets",
         "measurements",
         "crops",
         "preview",
         "styles",
         "layout",
+        "scripts",
+        "builders",
         "qa",
         "qa/reviews",
         "qa/reviews/pre-visual",
@@ -347,6 +568,13 @@ def main() -> int:
             copied_tools[filename] = destination.exists()
         else:
             copied_tools[filename] = False
+    script_source = skill_dir / "scripts" / "realesrgan_upscale.py"
+    script_destination = workspace / "scripts" / "realesrgan_upscale.py"
+    if script_source.exists():
+        shutil.copy2(script_source, script_destination)
+        copied_tools["scripts/realesrgan_upscale.py"] = script_destination.exists()
+    else:
+        copied_tools["scripts/realesrgan_upscale.py"] = False
 
     deck_spec = {
         "deck": {
@@ -510,6 +738,16 @@ def main() -> int:
         "content_strategy_locked": False,
         "visual_ambition": "premium business deck with template fidelity",
         "deck_profile": "",
+        "deck_profile_evidence": {
+            "primary_profile": "",
+            "secondary_profiles": [],
+            "audience": "",
+            "occasion": "",
+            "source_signals": [],
+            "excluded_style_families": [],
+            "notes": "",
+        },
+        "style_recommendation_policy": DEFAULT_STYLE_RECOMMENDATION_POLICY,
         "template_is_hard_constraint": args.mode == "template-following",
         "selected_narrative_id": "",
         "narrative_lock": {
@@ -584,6 +822,7 @@ def main() -> int:
                 "lifestyle",
             ],
         },
+        "diversity_contract": DEFAULT_STYLE_DIVERSITY_CONTRACT,
         "taste_guidance": {
             "enabled": True,
             "sources": [
@@ -600,6 +839,8 @@ def main() -> int:
             ],
             "style_principles": [
                 "each direction differs by visual aesthetic only: art style, material, depth, typography feel, icon/illustration style, chart rendering, composition rhythm, and density",
+                "each direction must match the actual deck task, audience, and occasion before it is recommended",
+                "multi-style runs must use visibly different layout archetypes and evidence presentation patterns, not only swapped icons, colors, line styles, or small modules",
                 "style lanes must not rename or replace the selected narrative treatment, slide content, claim, data, or proof object",
                 "single-slide comps must preserve a clear visual archetype",
                 "PPTX conversion must retain the approved comp's reader-facing visual grammar",
@@ -609,6 +850,9 @@ def main() -> int:
         },
         "diversity_axes": [
             "aesthetic family",
+            "task fit and audience fit",
+            "layout archetype",
+            "evidence presentation pattern",
             "composition grammar",
             "diagram/chart language",
             "density and pacing",
@@ -694,6 +938,7 @@ def main() -> int:
             "slidelib": "slidelib.py",
             "iconcut3": "iconcut3.py",
             "qa_gate": "qa_gate.py",
+            "realesrgan_upscale": "scripts/realesrgan_upscale.py",
             "pitfalls": "PITFALLS.md",
             "copied_to_workspace": copied_tools,
         },
@@ -709,6 +954,7 @@ def main() -> int:
             "skip_full_pipeline_gates": args.mode in {"reconstruction-only", "repair-existing-pptx"},
             "visual_fidelity_priority": "strict_slide_image_to_editable_pptx",
             "source_image_is_measurement_target_not_final_layer": True,
+            "source_comp_realesrgan_4k_required": True,
             "full_image_or_region_layers_forbidden": True,
             "ordinary_table_or_card_rebuild_forbidden": True,
             "native_text_shapes_charts_required": True,
@@ -719,6 +965,7 @@ def main() -> int:
             "real_source_icons_must_be_extracted": True,
             "native_redraw_for_named_pictograms_forbidden": True,
             "icon_hd_enhancement_required": True,
+            "icon_realesrgan_upscale_required": True,
             "multiline_text_split_required": True,
             "minimum_render_compare_rounds": DEFAULT_RENDER_COMPARE_LOOP["minimum_rounds"],
             "render_round_requires_new_export": True,
@@ -738,6 +985,21 @@ def main() -> int:
         "minimum_output_icon_min_dim_px": DEFAULT_STRICT_ICON_POLICY["minimum_output_icon_min_dim_px"],
         "icon_hd_enhancement_required": DEFAULT_STRICT_ICON_POLICY["icon_hd_enhancement_required"],
         "icon_hd_target_min_px": DEFAULT_STRICT_ICON_POLICY["icon_hd_target_min_px"],
+        "realesrgan_upscale_required": DEFAULT_STRICT_ICON_POLICY["realesrgan_upscale_required"],
+        "icon_upscale_method": DEFAULT_STRICT_ICON_POLICY["icon_upscale_method"],
+        "realesrgan_backend": DEFAULT_STRICT_ICON_POLICY["realesrgan_backend"],
+        "realesrgan_engine": DEFAULT_STRICT_ICON_POLICY["realesrgan_engine"],
+        "realesrgan_model": DEFAULT_STRICT_ICON_POLICY["realesrgan_model"],
+        "realesrgan_model_file": DEFAULT_STRICT_ICON_POLICY["realesrgan_model_file"],
+        "realesrgan_model_path": DEFAULT_STRICT_ICON_POLICY["realesrgan_model_path"],
+        "realesrgan_device": DEFAULT_STRICT_ICON_POLICY["realesrgan_device"],
+        "realesrgan_tile": DEFAULT_STRICT_ICON_POLICY["realesrgan_tile"],
+        "realesrgan_tile_pad": DEFAULT_STRICT_ICON_POLICY["realesrgan_tile_pad"],
+        "realesrgan_pre_pad": DEFAULT_STRICT_ICON_POLICY["realesrgan_pre_pad"],
+        "realesrgan_half": DEFAULT_STRICT_ICON_POLICY["realesrgan_half"],
+        "icon_upscale_script": DEFAULT_STRICT_ICON_POLICY["icon_upscale_script"],
+        "icon_upscale_manifest_path": DEFAULT_STRICT_ICON_POLICY["icon_upscale_manifest_path"],
+        "placement_source_dir": DEFAULT_STRICT_ICON_POLICY["placement_source_dir"],
         "feathered_slices_preserve_alpha": DEFAULT_STRICT_ICON_POLICY["feathered_slices_preserve_alpha"],
         "feathered_slices": [],
         "icons": [],

@@ -12,6 +12,8 @@ Default anti-patterns:
 
 - Flat table-only decks when the content can be shown as process, system, timeline, maturity, loop, funnel, radial, or dashboard logic.
 - Equal-card grids repeated across many slides with only titles and icons changed.
+- Multiple style options that keep the same visual skeleton and only swap icons, line treatments, accent colors, or small decorative modules.
+- Off-profile style recommendations, such as promotion/interview/academic-defense styles for a company profile deck, generic consulting/system-dashboard styles for a product deck, or annual-report styles for a defense/interview deck unless the user explicitly asked for that framing.
 - Generic AI gradients, random glow, decorative blobs, or depth that does not support the claim.
 - One-note palettes, especially undifferentiated blue-purple tech, beige corporate, or all-red/all-blue slides without neutral balance.
 - Text and metrics floating without a proof object or visual relationship.
@@ -83,6 +85,10 @@ Use learning paths, SOP flows, scenario maps, checklists, examples, and comprehe
 
 Use evidence spine, contribution map, capability comparison, growth arc, lessons loop, future roadmap, and commitment plan. Avoid self-evaluation pages made only of text boxes.
 
+### defense-promotion
+
+Use achievement proof spine, capability ladder, role-scope map, milestone timeline, before/after impact, stakeholder evidence, interview-ready recommendation board, or academic argument structure according to the actual occasion. Avoid generic consulting loops, annual-report dashboards, or system-control panels unless the user requested that framing.
+
 ## Style Direction Diversity
 
 When generating multiple directions, choose concrete `style_id` values from [style-library.md](style-library.md) before writing ImageGen prompts. Do not start from vague adjectives like "flat", "3D", "tech", "premium", or "minimal" unless they map to a canonical style id.
@@ -94,14 +100,22 @@ Common user requests map to style ids:
 - Apple launch/keynote style: `apple-keynote-black` or `apple-keynote-white`
 - Notion style: `notion-workspace-clean`
 - Minimalist style: `swiss-international`, `lecture-minimal-white`, or `brand-proposal-minimal`
+- Promotion defense style: `promotion-defense-evidence` or `personal-performance-review`
+- Interview style: `interview-case-board`
+- Rigorous academic style: `rigorous-academic-defense` or `thesis-defense-clean`
 - Classical style: `classical-european` or `shareholder-letter-editorial`
 
 Screenshot-inspired categories from Tosea-like template libraries are represented in `style-library.md`: workplace, company business, consulting research, finance/investor, industry solution, education/academic, creative brand, personal/resume, and lifestyle/event.
+
+Before choosing among these styles, classify the deck profile. Reuse a previous task's preferred styles only if the current profile matches; for example, a company introduction should not inherit promotion-defense or academic options, and a promotion defense should not inherit company-profile options.
 
 Each option must differ by more than color:
 
 - aesthetic family
 - canonical style id and style source
+- deck-profile fit and audience fit
+- layout archetype
+- evidence presentation pattern
 - composition grammar
 - visual skin and material language
 - density and pacing

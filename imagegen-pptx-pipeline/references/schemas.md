@@ -217,6 +217,37 @@ Use these structures as the stable handoff between phases. Keep files compact bu
   "style_variation_scope": "visual_aesthetic_only",
   "content_strategy_locked": true,
   "deck_profile": "",
+  "deck_profile_evidence": {
+    "primary_profile": "",
+    "secondary_profiles": [],
+    "audience": "",
+    "occasion": "",
+    "source_signals": [],
+    "excluded_style_families": [],
+    "notes": ""
+  },
+  "style_recommendation_policy": {
+    "policy_id": "task-aware-style-recommendation-v1",
+    "derive_from_deck_profile": true,
+    "recommended_styles_must_match_deck_profile": true,
+    "ask_before_using_off_profile_styles": true,
+    "off_profile_requires_user_request": true,
+    "fit_reason_required_per_option": true,
+    "profile_style_routes": [
+      {
+        "profile": "company-profile",
+        "signals": ["company-profile", "company intro", "enterprise intro", "企业介绍", "公司介绍"],
+        "allowed_style_ids": ["corporate-profile-architectural", "corporate-team-collaboration", "nordic-business-future", "brand-proposal-minimal"],
+        "allowed_aesthetic_families": ["company-profile", "brand-proposal", "editorial-gallery", "annual-report"]
+      },
+      {
+        "profile": "defense-personal",
+        "signals": ["defense", "promotion", "interview", "答辩", "晋升", "面试"],
+        "allowed_style_ids": ["promotion-defense-evidence", "personal-performance-review", "interview-case-board", "rigorous-academic-defense", "thesis-defense-clean"],
+        "allowed_aesthetic_families": ["personal-brand", "academic", "editorial-gallery"]
+      }
+    ]
+  },
   "selected_narrative_id": "",
   "narrative_lock": {
     "deck_spec_fingerprint": "sha256:<hash>",
@@ -243,6 +274,18 @@ Use these structures as the stable handoff between phases. Keep files compact bu
     "enabled": true,
     "sources": [{"name": "built-in-ppt-taste-system", "path": "references/taste-system.md"}]
   },
+  "diversity_contract": {
+    "policy_id": "style-lane-diversity-v1",
+    "forbid_near_identical_contact_sheets": true,
+    "reject_icon_only_or_color_only_variation": true,
+    "require_distinct_style_ids": true,
+    "require_distinct_aesthetic_families": true,
+    "require_distinct_layout_archetypes": true,
+    "require_distinct_evidence_presentation": true,
+    "require_distinct_thumbnail_differentiators": true,
+    "minimum_distinct_axes": 5,
+    "required_axes": ["style_id", "aesthetic_family", "layout_archetype", "evidence_presentation", "composition_grammar"]
+  },
   "candidate_directions": [
     {
       "option_id": "option-a",
@@ -251,6 +294,18 @@ Use these structures as the stable handoff between phases. Keep files compact bu
       "style_source": "built-in-style-library",
       "aesthetic_family": "consulting-report",
       "visual_signature": "",
+      "task_fit": {
+        "profile_match": true,
+        "fit_reason": "",
+        "profile_signals_used": [],
+        "user_requested_off_profile": false
+      },
+      "layout_archetype": "",
+      "evidence_presentation": "",
+      "composition_grammar": "",
+      "density_and_pacing": "",
+      "thumbnail_differentiators": [],
+      "must_not_reuse": "",
       "narrative_behavior": "same_story_reexpressed"
     }
   ],
@@ -262,6 +317,9 @@ Use these structures as the stable handoff between phases. Keep files compact bu
       "style_source": "built-in-style-library",
       "aesthetic_family": "consulting-report",
       "visual_signature": "",
+      "layout_archetype": "",
+      "evidence_presentation": "",
+      "composition_grammar": "",
       "generator": "imagegen",
       "prompt_path": "prompts/style-lane-a.txt",
       "output_path": "styles/lane-a-contact-sheet.png",
@@ -285,8 +343,30 @@ Use these structures as the stable handoff between phases. Keep files compact bu
     "enabled": true,
     "prompt_detail_level": "highest_available",
     "requested_single_slide_canvas_px": {"width": 3840, "height": 2160},
-    "minimum_acceptable_comp_px": {"width": 1920, "height": 1080},
+    "minimum_acceptable_comp_px": {"width": 3840, "height": 2160},
     "minimum_acceptable_comp_bytes": 1048576,
+    "postprocess_policy": {
+      "enabled": true,
+      "mandatory": true,
+      "local_repair_script": "scripts/realesrgan_upscale.py",
+      "upscale_method": "python-realesrganer",
+      "realesrgan_backend": "python",
+      "realesrgan_engine": "RealESRGANer",
+      "realesrgan_model": "RealESRGAN_x4plus",
+      "realesrgan_model_file": "RealESRGAN_x4plus.pth",
+      "realesrgan_model_path": "assets/models/RealESRGAN_x4plus.pth",
+      "realesrgan_device": "cpu",
+      "realesrgan_tile": 400,
+      "realesrgan_tile_pad": 12,
+      "realesrgan_pre_pad": 0,
+      "realesrgan_half": false,
+      "target_px": {"width": 3840, "height": 2160},
+      "raw_output_dir": "slides/raw",
+      "upscaled_output_dir": "slides/upscaled",
+      "manifest_dir": "upscale",
+      "downstream_uses_realesrgan_comp": true,
+      "fallback_allowed_for_postprocess": false
+    },
     "minimum_acceptable_contact_sheet_px": {"width": 2400, "height": 1350},
     "prompt_requires_crisp_text_and_icons": true,
     "review_required_before_pptx": true
@@ -312,8 +392,27 @@ Use these structures as the stable handoff between phases. Keep files compact bu
   "image_quality_policy": {
     "enabled": true,
     "requested_single_slide_canvas_px": {"width": 3840, "height": 2160},
-    "minimum_acceptable_comp_px": {"width": 1920, "height": 1080},
+    "minimum_acceptable_comp_px": {"width": 3840, "height": 2160},
     "minimum_acceptable_comp_bytes": 1048576,
+    "postprocess_policy": {
+      "enabled": true,
+      "mandatory": true,
+      "local_repair_script": "scripts/realesrgan_upscale.py",
+      "upscale_method": "python-realesrganer",
+      "realesrgan_backend": "python",
+      "realesrgan_engine": "RealESRGANer",
+      "realesrgan_model": "RealESRGAN_x4plus",
+      "realesrgan_model_file": "RealESRGAN_x4plus.pth",
+      "realesrgan_model_path": "assets/models/RealESRGAN_x4plus.pth",
+      "realesrgan_device": "cpu",
+      "realesrgan_tile": 400,
+      "realesrgan_tile_pad": 12,
+      "realesrgan_pre_pad": 0,
+      "realesrgan_half": false,
+      "target_px": {"width": 3840, "height": 2160},
+      "downstream_uses_realesrgan_comp": true,
+      "fallback_allowed_for_postprocess": false
+    },
     "prompt_requires_crisp_text_and_icons": true,
     "review_required_before_pptx": true
   },
@@ -346,8 +445,18 @@ Use these structures as the stable handoff between phases. Keep files compact bu
     "icon_extractor_script": "iconcut3.py",
     "qa_gate_script": "qa_gate.py",
     "pitfalls_reference": "PITFALLS.md",
+    "realesrgan_upscale_script": "scripts/realesrgan_upscale.py",
+    "realesrgan_backend": "python",
+    "realesrgan_engine": "RealESRGANer",
+    "realesrgan_model_file": "RealESRGAN_x4plus.pth",
+    "realesrgan_device": "cpu",
+    "realesrgan_tile": 400,
+    "realesrgan_tile_pad": 12,
+    "realesrgan_pre_pad": 0,
+    "realesrgan_half": false,
     "basis_px": {"width": 1920, "height": 1080},
     "source_image_is_measurement_target": true,
+    "source_comp_realesrgan_4k_required": true,
     "full_image_backgrounds_allowed": false,
     "region_image_backgrounds_allowed": false,
     "native_text_required": true,
@@ -361,6 +470,7 @@ Use these structures as the stable handoff between phases. Keep files compact bu
     "real_source_icons_must_be_extracted": true,
     "native_redraw_for_named_pictograms_forbidden": true,
     "icon_hd_enhancement_required": true,
+    "icon_realesrgan_upscale_required": true,
     "minimum_render_compare_rounds": 10,
     "render_round_requires_new_export": true,
     "qa_gate_required": true,
@@ -382,6 +492,21 @@ Use these structures as the stable handoff between phases. Keep files compact bu
     "glyph_helpers_are_placeholder_only": true,
     "icon_hd_enhancement_required": true,
     "icon_hd_target_min_px": 256,
+    "realesrgan_upscale_required": true,
+    "icon_upscale_method": "python-realesrganer",
+    "realesrgan_backend": "python",
+    "realesrgan_engine": "RealESRGANer",
+    "realesrgan_model": "RealESRGAN_x4plus",
+    "realesrgan_model_file": "RealESRGAN_x4plus.pth",
+    "realesrgan_model_path": "assets/models/RealESRGAN_x4plus.pth",
+    "realesrgan_device": "cpu",
+    "realesrgan_tile": 400,
+    "realesrgan_tile_pad": 12,
+    "realesrgan_pre_pad": 0,
+    "realesrgan_half": false,
+    "icon_upscale_script": "scripts/realesrgan_upscale.py",
+    "icon_upscale_manifest_path": "icons/icon_upscale_manifest.json",
+    "placement_source_dir": "icons/upscaled",
     "feathered_slices_preserve_alpha": true,
     "minimum_output_icon_min_dim_px": 256
   },
@@ -402,13 +527,16 @@ Use these structures as the stable handoff between phases. Keep files compact bu
     {
       "slide_id": "slide-001",
       "comp_path": "slides/slide-001-comp.png",
+      "raw_comp_path": "slides/raw/slide-001-raw.png",
+      "upscale_manifest_path": "upscale/slide-001-comp.realesrgan.json",
       "image_source_type": "imagegen | user_supplied",
       "visual_archetype": "system map | timeline | dashboard | table | other",
       "clarity_review": {
         "status": "approved | user_accepted_risk",
         "blocking_blur": false,
         "image_dimensions_px": {"width": 3840, "height": 2160},
-        "image_file_size_bytes": 5242880
+        "image_file_size_bytes": 5242880,
+        "upscale_manifest_path": "upscale/slide-001-comp.realesrgan.json"
       },
       "style_continuity_review": {"status": "approved"},
       "converter": {
@@ -486,8 +614,9 @@ Use for both generated comps and direct image-to-PPTX conversion. `reconstructio
     "slidelib": "slidelib.py",
     "iconcut3": "iconcut3.py",
     "qa_gate": "qa_gate.py",
+    "realesrgan_upscale": "scripts/realesrgan_upscale.py",
     "pitfalls": "PITFALLS.md",
-    "copied_to_workspace": {"slidelib.py": true, "iconcut3.py": true, "qa_gate.py": true, "PITFALLS.md": true}
+    "copied_to_workspace": {"slidelib.py": true, "iconcut3.py": true, "qa_gate.py": true, "PITFALLS.md": true, "scripts/realesrgan_upscale.py": true}
   },
   "basis_px": {"width": 1920, "height": 1080},
   "slide_count": 1,
@@ -501,6 +630,7 @@ Use for both generated comps and direct image-to-PPTX conversion. `reconstructio
     "skip_full_pipeline_gates": false,
     "visual_fidelity_priority": "strict_slide_image_to_editable_pptx",
     "source_image_is_measurement_target_not_final_layer": true,
+    "source_comp_realesrgan_4k_required": true,
     "full_image_or_region_layers_forbidden": true,
     "ordinary_table_or_card_rebuild_forbidden": true,
     "native_text_shapes_charts_required": true,
@@ -511,6 +641,7 @@ Use for both generated comps and direct image-to-PPTX conversion. `reconstructio
     "real_source_icons_must_be_extracted": true,
     "native_redraw_for_named_pictograms_forbidden": true,
     "icon_hd_enhancement_required": true,
+    "icon_realesrgan_upscale_required": true,
     "multiline_text_split_required": true,
     "minimum_render_compare_rounds": 10,
     "render_round_requires_new_export": true,
@@ -522,6 +653,8 @@ Use for both generated comps and direct image-to-PPTX conversion. `reconstructio
     {
       "slide_id": "slide-001",
       "source_image_path": "slides/slide-001-comp.png",
+      "raw_source_image_path": "slides/raw/slide-001-raw.png",
+      "upscale_manifest_path": "upscale/slide-001-comp.realesrgan.json",
       "basis_image_path": "measurements/slide-001-src.png",
       "text_source_status": "provided | ocr_verified | user_accepted_image_text | image_only_accepted",
       "measurement_status": "planned | completed | approved",
@@ -531,6 +664,7 @@ Use for both generated comps and direct image-to-PPTX conversion. `reconstructio
       "source_icon_inventory_status": "pending | icons_detected | no_source_icons_detected",
       "extracted_icon_count": 0,
       "icon_jobs_path": "icons/icon_jobs.json",
+      "icon_upscale_manifest_path": "icons/icon_upscale_manifest.json",
       "icon_contact_sheet": "icon-sheets/icon-contact-sheet.png",
       "build_script_path": "builders/slide-001.py",
       "output_slide_pptx": "slide-modules/slide-001.pptx",

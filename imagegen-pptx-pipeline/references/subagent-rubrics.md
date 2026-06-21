@@ -161,6 +161,8 @@ Check projection readability, contrast, color-only encoding, small text, visual 
 Review `conversion_manifest.json`, `visual_contract.json`, source slide images, and optional text files. Check that every slide has:
 
 - source_image_path
+- exact 3840x2160 Real-ESRGAN comp source, not a raw 1080p/2K image
+- `upscale_manifest_path` proving Python `RealESRGANer` processed the comp with `RealESRGAN_x4plus.pth`, CPU, and tile=400
 - valid text_source_status
 - 1920x1080 basis path or a plan to create it
 - measurement_status planned/completed
@@ -179,13 +181,14 @@ Review icon extraction jobs, outputs, and contact sheets. Require:
 - source icon inventory before extraction
 - every named source pictogram is extracted; native redraw via `slidelib` glyph helpers is not accepted for real icons
 - no manual crop fallback after ClipError
-- strict line-art icons are HD-enhanced before PPTX placement
+- strict line-art icons are HD-enhanced and then processed with Python `RealESRGANer` on CPU before PPTX placement
+- icon jobs reference `icons/icon_upscale_manifest.json`, and PPTX placement uses `icons/upscaled/*`
 - 4-edge alpha audit passes for transparent icons
 - contact sheet proves every asset is a pictogram, not text
 - wide assets with aspect >2.5 are justified row strips or re-extracted
 - feathered opaque slices are documented, placed over sampled native fill, and enhanced with alpha crisping disabled
 
-Flag P0 for clipped icons, icons touching image edges, text labels captured as icons, missing HD enhancement/contact-sheet audit, source pictograms redrawn with native glyph helpers, feathered slices sharpened into visible seams, or `not_applicable` without a no-source-icons inventory.
+Flag P0 for clipped icons, icons touching image edges, text labels captured as icons, missing Real-ESRGAN HD enhancement/contact-sheet audit, source pictograms redrawn with native glyph helpers, feathered slices sharpened into visible seams, or `not_applicable` without a no-source-icons inventory.
 
 ### render-compare-auditor
 

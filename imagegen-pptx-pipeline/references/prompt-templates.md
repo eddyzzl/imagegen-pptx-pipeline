@@ -104,7 +104,9 @@ Inputs:
 - slide_intent_plan.json summary
 - narrative_plan.json selected treatment
 - design_system.json template and brand constraints
-- style lane: option_id, style_id, style_source, aesthetic_family, visual_signature
+- deck_profile_evidence and style_recommendation_policy from style_brief.json
+- diversity_contract from style_brief.json
+- style lane: option_id, style_id, style_source, aesthetic_family, visual_signature, task_fit, layout_archetype, evidence_presentation, composition_grammar, density_and_pacing, thumbnail_differentiators, must_not_reuse
 - narrative lock fingerprint and locked slide order
 - image_quality_policy
 - relevant entries from references/style-library.md and references/taste-system.md
@@ -115,9 +117,13 @@ Requirements:
 2. Include all slides in locked order.
 3. Keep the same story, claims, data, and proof-object intent.
 4. Express only visual/aesthetic differences: composition grammar, material/depth, typography feel, density, icon language, chart rendering, and diagram style.
-5. Do not invent logos, people, product UI, brands, numbers, or sources.
-6. If a template/source PPTX exists, preserve its protected frame and explore only inside allowed content zones.
-7. Make titles, key numbers, proof objects, and page structure readable enough for selection.
+5. Make agent-recommended options task-appropriate for deck_profile_evidence and its selected profile route. If the user explicitly asked for an off-profile style, render it and record `task_fit.profile_match=false` plus `task_fit.user_requested_off_profile=true` instead of pretending it is the default task-fit recommendation.
+6. Make this option structurally different from the other options. The difference must be visible at thumbnail scale through layout_archetype, evidence_presentation, composition_grammar, density/pacing, and title treatment. Merely changing icons, line styles, accent colors, or small modules is a failed option.
+7. Respect must_not_reuse. Do not reuse the same center loop, four-card ring, top breadcrumb, bottom metric strip, equal-card grid, or red-white frame from another option unless that is the declared unique archetype for this lane.
+8. Keep body copy readable for editable PPT conversion: design around 10-11pt minimum body text, larger key labels, and no dense microtext.
+9. Do not invent logos, people, product UI, brands, numbers, or sources.
+10. If a template/source PPTX exists, preserve its protected frame and explore only inside allowed content zones.
+11. Make titles, key numbers, proof objects, and page structure readable enough for selection.
 
 Output path:
 - `styles/<style_lane_id>-contact-sheet.png`
@@ -199,9 +205,11 @@ Convert approved slide images into editable PPTX using the bundled converter.
 
 Before coding:
 - Read PITFALLS.md.
-- Copy slidelib.py, iconcut3.py, qa_gate.py, and PITFALLS.md into the workspace if missing.
-- Work in 1920x1080 basis coordinates.
-- Keep the original high-resolution source as `hd`; use `scale = hd.width / 1920`.
+- Copy slidelib.py, iconcut3.py, qa_gate.py, PITFALLS.md, and scripts/realesrgan_upscale.py into the workspace if missing.
+- Process every approved or supplied source slide through `scripts/realesrgan_upscale.py --kind comp --model-path <RealESRGAN_x4plus.pth> --tile 400 --tile-pad 12 --pre-pad 0` first.
+- Use only the exact 3840x2160 Real-ESRGAN comp as `source_image_path`; record `upscale_manifest_path`.
+- Work in 1920x1080 basis coordinates after that.
+- Keep the Real-ESRGAN 4K source as `hd`; use `scale = hd.width / 1920`.
 
 Phase 1: Measure
 - Create `measurements/slide-XXX-src.png` at 1920x1080.
@@ -212,6 +220,8 @@ Phase 1: Measure
 Phase 2: Extract icons
 - Inventory every recognizable source pictogram. If you can name it (target, shield, database, briefcase, person, building, bulb, cube, chart, people), extract it.
 - Use `iconcut3.run_jobs` or `iconcut3.strict_cut3`; strict extraction HD-enhances line-art icons to at least 256px minimum dimension before placement.
+- Run `scripts/realesrgan_upscale.py --kind icon --input icons --output icons/upscaled --manifest icons/icon_upscale_manifest.json --model-path <RealESRGAN_x4plus.pth> --target-min 256 --tile 400 --tile-pad 12 --pre-pad 0`.
+- Place only `icons/upscaled/*` assets into PPTX.
 - On ClipError, fix the box, clear rects, or core box and rerun.
 - Never hand-crop, alpha-key manually, or add a lenient fallback.
 - If icons were already extracted, run `iconcut3.enhance_dir(outdir, feathered=(...))` before building the PPTX.
