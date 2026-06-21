@@ -42,3 +42,7 @@ private/
 secrets/
 *.env
 .env*
+
+# Local promo generation experiments
+tools/generate_xhs_promos.py
+tools/generate_xhs_promos_v2.py
