@@ -38,7 +38,7 @@ jobs:
             imagegen-pptx-pipeline/scripts/check_imagegen_comp_asset.py \
             imagegen-pptx-pipeline/scripts/check_pipeline_gates.py \
             imagegen-pptx-pipeline/scripts/init_pipeline_workspace.py \
-            imagegen-pptx-pipeline/scripts/normalize_slide_comp.py \
+            imagegen-pptx-pipeline/scripts/realesrgan_upscale.py \
             tests/test_pipeline_smoke.py
 
       - name: Run smoke tests
